@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NVIC-质象</title>
+    <link rel="stylesheet" href="/static/fonts/google-fonts.css?v={{ time }}">
+    <link rel="stylesheet" href="/static/style.css?v={{ time }}">
+    <link rel="icon" href="/static/logo.jpg?v={{ time }}" type="image/jpeg">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/MotionPathPlugin.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/TextPlugin.min.js"></script>
+
+</head>
+<body class="show-initial-view">
+
+    <aside id="settings-panel" class="settings-panel" aria-hidden="true">
+        <div class="settings-panel-content">
+            <div class="settings-panel-header">
+                <div>
+                    <p class="eyebrow" data-translate-key="settingsEyebrow">Generation Studio</p>
+                    <h2 data-translate-key="settingsPanelTitle">专业配置</h2>
+                </div>
+                <button id="settings-close" class="settings-close" data-translate-key="closeTitle" title="关闭">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="settings-grid">
+            <label class="setting-field">
+                <span data-translate-key="styleLabel">视觉风格</span>
+                <select id="setting-style">
+                    <option value="cinematic" data-translate-key="styleCinematic">电影叙事</option>
+                    <option value="minimal" data-translate-key="styleMinimal" selected>极简专业</option>
+                    <option value="academic" data-translate-key="styleAcademic">教学讲解</option>
+                    <option value="futuristic" data-translate-key="styleFuturistic">未来科技</option>
+                </select>
+            </label>
+            <label class="setting-field">
+                <span data-translate-key="durationLabel">视频节奏</span>
+                <select id="setting-duration">
+                    <option value="short" data-translate-key="durationShort">短：30 秒</option>
+                    <option value="medium" data-translate-key="durationMedium">标准：60 秒</option>
+                    <option value="long" data-translate-key="durationLong">长：90 秒</option>
+                </select>
+            </label>
+            <label class="setting-field">
+                <span data-translate-key="ratioLabel">画幅比例</span>
+                <select id="setting-ratio">
+                    <option value="16:9">16:9</option>
+                    <option value="9:16">9:16</option>
+                    <option value="1:1">1:1</option>
+                </select>
+            </label>
+            <label class="setting-field">
+                <span data-translate-key="resolutionLabel">容器尺寸</span>
+                <select id="setting-resolution">
+                    <option value="720p">720p</option>
+                    <option value="1080p" selected>1080p</option>
+                    <option value="2k">2K</option>
+                </select>
+            </label>
+            <label class="setting-field">
+                <span data-translate-key="depthLabel">讲解深度</span>
+                <select id="setting-depth">
+                    <option value="starter" data-translate-key="depthStarter">入门</option>
+                    <option value="standard" data-translate-key="depthStandard">标准</option>
+                    <option value="expert" data-translate-key="depthExpert">专业</option>
+                </select>
+            </label>
+            <label class="setting-switch">
+                <input id="setting-narration" type="checkbox" checked>
+                <span data-translate-key="narrationLabel">强化文案</span>
+            </label>
+            <label class="setting-switch">
+                <input id="setting-bilingual" type="checkbox" checked>
+                <span data-translate-key="bilingualLabel">双语字幕</span>
+            </label>
+            <label class="setting-switch">
+                <input id="setting-mathjax" type="checkbox">
+                <span data-translate-key="mathjaxLabel">使用 MathJax</span>
+            </label>
+            </div>
+            <button id="settings-confirm" class="settings-confirm" data-translate-key="settingsConfirm">确认生成</button>
+        </div>
+    </aside>
+
+    <div id="passphrase-gate" class="passphrase-gate">
+        <form id="passphrase-form" class="passphrase-card">
+            <p data-translate-key="passphraseEyebrow">ACCESS</p>
+            <h2 data-translate-key="passphraseTitle">请输入暗号</h2>
+            <input id="passphrase-input" type="password" data-translate-key="passphrasePlaceholder" placeholder="暗号" autocomplete="off" required>
+            <button type="submit" data-translate-key="passphraseSubmit">进入</button>
+            <span id="passphrase-error" data-translate-key="passphraseError" hidden>暗号错误</span>
+        </form>
+    </div>
+
+    <div id="initial-view" class="initial-view">
+        <a class="wordmark" href="https://blog.ckh-cn.site/" target="_blank" rel="noopener noreferrer">NVIC-质象</a>
+
+        <div class="initial-content">
+            <div class="hero-group">
+                <h1 data-translate-key="heroTitle">在此赋予概念以生命，转瞬之间</h1>
+                <form id="initial-form" class="initial-form">
+                    <div id="animated-placeholder" class="animated-placeholder"></div>
+                    <input type="text" id="initial-input" required>
+                    <button type="submit" data-translate-key="startCreatingTitle" title="开始创作">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="M3 20V4l19 8Z"/></svg>
+                    </button>
+                </form>
+            </div>
+        <footer class="initial-footer">
+            <span>概念 · 生成 · 影像</span>
+        </footer>
+        </div>
+    </div>
+
+    <div id="chat-view" class="chat-view">
+        <div class="chat-shell">
+            <aside class="chat-rail">
+                <a class="rail-brand" href="https://blog.ckh-cn.site/" target="_blank" rel="noopener noreferrer">
+                    <img src="/static/logo.jpg" alt="Studio Logo">
+                    <div>
+                        <span>NVIC-质象</span>
+                        <strong>Generation Console</strong>
+                    </div>
+                </a>
+                <div class="rail-copy">
+                    <p data-translate-key="chatRailEyebrow">MODEL OUTPUT</p>
+                    <h2 data-translate-key="chatRailTitle">全量流式输出</h2>
+                    <span data-translate-key="chatRailBody">每个 token 都会被保留；解析成功后自动渲染动画，解析失败时可一键重新生成。</span>
+                </div>
+                <div class="rail-actions">
+                    <button id="new-chat-button" class="new-chat-button" data-translate-key="newChatTitle" title="新对话">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                        <span data-translate-key="newChat">新对话</span>
+                    </button>
+                    <button class="new-chat-button" data-settings-toggle data-translate-key="generationConfig" title="生成配置">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6l-.09.09a2 2 0 1 1-2.83-2.83l.09-.09A1.65 1.65 0 0 0 11.6 15a1.65 1.65 0 0 0-.6-1l-.09-.09a2 2 0 1 1 2.83-2.83l.09.09A1.65 1.65 0 0 0 15 11.6a1.65 1.65 0 0 0 1-.6l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 15Z"/></svg>
+                        <span data-translate-key="generationConfig">生成配置</span>
+                    </button>
+                </div>
+            </aside>
+            <section class="chat-stage">
+                <header class="chat-header">
+                    <div>
+                        <p data-translate-key="chatHeaderEyebrow">LIVE SESSION</p>
+                        <h1 data-translate-key="chatHeaderTitle">雾象生成台</h1>
+                    </div>
+                    <span class="live-pill" data-translate-key="chatLivePill">SSE 流式连接</span>
+                </header>
+                <main id="chat-log" class="chat-log"></main>
+                <footer class="chat-footer">
+                    <form id="chat-form" class="chat-form">
+                        <div class="input-container">
+                            <input type="text" id="chat-input" data-translate-key="chatPlaceholder" placeholder="AI 生成结果具有随机性，您可在此输入修改意见，通过多轮对话调整结果" autocomplete="off" required>
+                            <button type="button" id="stop-generation-button" class="stop-button" data-translate-key="stopGeneration" title="停止生成" hidden>停止</button>
+                            <button type="submit" class="submit-button" data-translate-key="sendTitle" title="发送">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                            </button>
+                        </div>
+                    </form>
+                </footer>
+            </section>
+        </div>
+    </div>
+
+
+
+    <template id="user-message-template">
+        <div class="message-group user"><div class="message-bubble">${text}</div></div>
+    </template>
+    
+    <template id="agent-status-template">
+        <div class="message-group agent">
+            <div class="status-bubble">
+                <div class="thinking-dots"><span></span><span></span><span></span></div>
+                <p>${text}</p>
+            </div>
+        </div>
+    </template>
+
+    <template id="agent-error-template">
+        <div class="message-group agent has-error">
+            <details class="error-details">
+                <summary>
+                    <svg viewBox="0 0 24 24" class="icon-error"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"></path></svg>
+                    <span>${text}</span>
+                </summary>
+                <pre class="error-detail-text"></pre>
+            </details>
+        </div>
+    </template>
+
+    <template id="agent-output-template">
+        <div class="message-group agent has-output">
+            <article class="output-card is-streaming">
+                <header class="output-header">
+                    <div>
+                        <p data-translate-key="rawOutputEyebrow">RAW RESPONSE</p>
+                        <h3 data-translate-key="rawOutputTitle">大模型完整输出</h3>
+                    </div>
+                    <span class="output-status" data-translate-key="generatingCode">生成代码中...</span>
+                </header>
+                <pre class="raw-output"><code></code></pre>
+            </article>
+        </div>
+    </template>
+
+    <template id="parse-retry-template">
+        <div class="message-group agent has-retry">
+            <article class="retry-card">
+                <div>
+                    <p data-translate-key="parseRetryEyebrow">PARSE FAILED</p>
+                    <h3 data-translate-key="parseRetryTitle">输出已完整保留，但暂时无法渲染动画</h3>
+                    <span data-translate-key="parseRetryBody">是否使用同一提示词重新生成一次？</span>
+                </div>
+                <button class="retry-generation" data-translate-key="parseRetryButton">重新生成</button>
+            </article>
+        </div>
+    </template>
+
+    <template id="animation-player-template">
+        <div class="message-group agent has-player">
+            <div class="player-container">
+                <div class="iframe-wrapper"><iframe class="animation-iframe" sandbox="allow-scripts allow-same-origin"></iframe></div>
+                <div class="player-actions">
+                    <button class="action-button open-new-window">
+                        <span data-translate-key="openInNewWindow">在新窗口中打开</span>
+                    </button>
+                    <button class="action-button save-html">
+                        <span data-translate-key="saveAsHTML">保存为 HTML</span>
+                    </button>
+                    <button class="action-button export-video">
+                        <span data-translate-key="exportAsVideo">导出为视频</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <div id="feature-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button id="modal-close-button" class="modal-close-button" title="Close">×</button>
+            <p data-translate-key="featureComingSoon">该功能正在开发中...</p>
+            <button id="modal-github-button" class="modal-button" data-translate-key="visitGitHub">访问 GitHub</button>
+        </div>
+    </div>
+
+    <script src="/static/script.js?v={{ time }}"></script>
+
+    <div id="overlay" class="overlay" style="display: none;"></div>
+    <div id="warning-box" class="warning-box" style="display: none;">
+        <div id="warning-spinner" class="warning-spinner" hidden></div>
+        <div class="warning-copy">
+            <strong id="warning-message">警告信息</strong>
+            <span id="warning-description" hidden></span>
+        </div>
+        <div class="warning-actions">
+            <button id="queue-cancel-button" class="queue-cancel-button" type="button" hidden>取消任务</button>
+            <button id="warning-close-button" class="close-button" onclick="hideWarning()">×</button>
+        </div>
+    </div>
+</body>
+</html>
