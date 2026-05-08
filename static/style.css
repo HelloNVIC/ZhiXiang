@@ -1,6 +1,6 @@
 :root {
-    --font-sans: 'IBM Plex Mono', 'Noto Serif SC', ui-monospace, monospace;
-    --font-display: 'Noto Serif SC', 'IBM Plex Mono', serif;
+    --font-sans: 'MiSans', 'HarmonyOS Sans SC', 'HarmonyOS Sans', 'Alibaba PuHuiTi', 'Alibaba PuHuiTi 3.0', 'Source Han Sans SC', 'Noto Sans CJK SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-display: 'MiSans', 'HarmonyOS Sans SC', 'HarmonyOS Sans', 'Alibaba PuHuiTi', 'Alibaba PuHuiTi 3.0', 'Source Han Sans SC', 'Noto Sans CJK SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
     --bg-color: #FFFFFF;
     --surface: #FFFFFF;
     --surface-muted: #F4F4F4;
@@ -148,7 +148,7 @@ button:disabled {
 .wordmark { position: absolute; top: 1.5rem; left: 1.5rem; padding: 10px 14px; border: 1px solid #000; background: #fff; box-shadow: 4px 4px 0 #000; font-weight: 900; letter-spacing: -0.04em; color: #000; text-decoration: none; cursor: pointer; }
 .initial-content { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; flex-grow: 1; text-align: center;}
 .hero-group { text-align: center; max-width: min(980px, 100%); width: 100%; }
-.hero-group h1 { font-family: var(--font-display); font-size: clamp(4.2rem, 15vw, 12rem); font-weight: 900; letter-spacing: -0.12em; line-height: 0.86; margin: 0 0 2.4rem 0; color: #000; }
+.hero-group h1 { font-family: var(--font-display); font-size: clamp(4.2rem, 15vw, 12rem); font-weight: 900; letter-spacing: -0.08em; line-height: 0.86; margin: 0 0 2.4rem 0; color: #000; }
 .hero-group h1::after { content: " "; display: block; margin-top: 1rem; font-family: var(--font-sans); font-size: clamp(0.78rem, 1.2vw, 1rem); line-height: 1; letter-spacing: 0.22em; font-weight: 700; }
 .initial-form { position: relative; max-width: 760px; margin: 0 auto; }
 
