@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
             zh: ["输入一个概念", "微积分的几何原理", "黑洞是如何形成的", "冒泡排序","雷达信道"],
             en: ["Enter a concept", "What is Heat Death?", "How are black holes formed?", "What is Bubble Sort?"]
         },
-        chatRailEyebrow: { zh: "MODEL OUTPUT", en: "MODEL OUTPUT" },
+        chatRailEyebrow: { zh: "随便的话", en: "随便的话" },
         chatRailTitle: { zh: "全量流式输出", en: "Full streaming output" },
         chatRailBody: { zh: "每个 token 都会被保留；解析成功后自动渲染动画，解析失败时可一键重新生成。", en: "Every token is preserved. Valid output renders automatically; parse failures can be regenerated in one click." },
         chatHeaderEyebrow: { zh: "LIVE SESSION", en: "LIVE SESSION" },
@@ -252,6 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!isInitial) {
             conversationHistory.push({ role: 'user', content: topic });
+            trackUserInput(topic, 'chat');
             startGeneration(topic);
             chatInput.value = '';
             return;
@@ -260,6 +261,15 @@ document.addEventListener('DOMContentLoaded', () => {
         pendingGenerationTopic = topic;
         pendingGenerationIsInitial = true;
         openSettingsPanel(true);
+    }
+
+    function trackUserInput(topic, source) {
+        window.umami?.track('user_input', {
+            source,
+            text: topic,
+            length: topic.length,
+            language: currentLang,
+        });
     }
 
     async function startGeneration(topic, options = {}) {
@@ -424,6 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pendingGenerationIsInitial) switchToChatView();
 
         conversationHistory.push({ role: 'user', content: topic });
+        trackUserInput(topic, pendingGenerationIsInitial ? 'initial' : 'chat_settings');
         startGeneration(topic);
         if (pendingGenerationIsInitial) {
             initialInput.value = '';
