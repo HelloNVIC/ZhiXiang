@@ -108,6 +108,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="M3 20V4l19 8Z"/></svg>
                     </button>
                 </form>
+                <button id="paper-explain-button" class="paper-entry-button" type="button" data-translate-key="paperExplain">论文解释</button>
             </div>
         <footer class="initial-footer">
             <span>概念 · 生成 · 视频</span>
@@ -241,6 +242,23 @@
             </div>
         </div>
     </template>
+
+    <div id="paper-upload-modal" class="modal-overlay">
+        <form id="paper-upload-form" class="modal-content share-form paper-upload-form">
+            <button id="paper-upload-close" class="modal-close-button" type="button" title="Close">×</button>
+            <p data-translate-key="paperUploadTitle">上传 PDF 论文</p>
+            <label>
+                <span data-translate-key="paperFileLabel">论文 PDF</span>
+                <input id="paper-file-input" type="file" accept="application/pdf,.pdf" required>
+                <span id="paper-file-name" class="paper-file-name" aria-live="polite"></span>
+            </label>
+            <label>
+                <span data-translate-key="paperFocusLabel">指定章节或概念（可选）</span>
+                <textarea id="paper-focus-input" rows="4" data-translate-key="paperFocusPlaceholder" placeholder="例如：第三章方法、Transformer 注意力机制、实验结果"></textarea>
+            </label>
+            <button class="modal-button" type="submit" data-translate-key="paperContinueConfig">继续配置</button>
+        </form>
+    </div>
 
     <div id="share-modal" class="modal-overlay">
         <form id="share-form" class="modal-content share-form">

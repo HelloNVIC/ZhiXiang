@@ -11,7 +11,7 @@ from urllib.parse import parse_qs
 
 import pytz
 import qrcode
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncOpenAI, OpenAIError
@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from pypdf import PdfReader
 try:
     import google.generativeai as genai
 except ModuleNotFoundError:
@@ -34,6 +35,8 @@ BASE_URL = credentials.get("BASE_URL", "")
 MODEL = credentials.get("MODEL", "")
 ENABLE_DEBUG_OUTPUT = credentials.get("ENABLE_DEBUG_OUTPUT", True)
 MAX_CONCURRENT_GENERATION_TASKS = credentials.get("MAX_CONCURRENT_GENERATION_TASKS", 1)
+MAX_PAPER_UPLOAD_BYTES = credentials.get("MAX_PAPER_UPLOAD_BYTES", 20 * 1024 * 1024)
+MAX_PAPER_TEXT_CHARS = credentials.get("MAX_PAPER_TEXT_CHARS", 120000)
 ACCESS_PASSPHRASES = credentials.get("ACCESS_PASSPHRASES")
 generation_semaphore = asyncio.Semaphore(MAX_CONCURRENT_GENERATION_TASKS)
 shared_html_links = {}
@@ -132,16 +135,7 @@ class ShareRequest(BaseModel):
     sourceHeight: int = 1080
 
 
-# -----------------------------------------------------------------------
-# 2. 核心：流式生成器 (现在会使用 history)
-# -----------------------------------------------------------------------
-async def llm_event_stream(
-    topic: str,
-    history: Optional[List[dict]] = None,
-    model: str = None, # Will use MODEL from config if not specified
-    settings: Optional[Dict[str, Any]] = None,
-) -> AsyncGenerator[str, None]:
-    history = history or []
+def build_generation_setting_instructions(settings: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
     settings = settings or {}
     allowed_styles = {
         "cinematic": "电影级叙事：镜头感强、节奏完整、视觉层次丰富。",
@@ -170,15 +164,31 @@ async def llm_event_stream(
         "1080p": "1920 × 1080 的 1080p 容器。",
         "2k": "2048 × 1152 的 2K 容器。",
     }
-    style_instruction = allowed_styles.get(settings.get("style"), allowed_styles["cinematic"])
-    duration_instruction = allowed_durations.get(settings.get("duration"), allowed_durations["medium"])
-    ratio_instruction = allowed_ratios.get(settings.get("ratio"), allowed_ratios["16:9"])
-    depth_instruction = allowed_depths.get(settings.get("depth"), allowed_depths["standard"])
-    resolution_instruction = allowed_resolutions.get(settings.get("resolution"), allowed_resolutions["1080p"])
-    narration_instruction = "旁白文案要更丰富，字幕节奏要清楚。" if settings.get("narration") else "旁白文字保持精炼，只保留关键解释。"
-    bilingual_instruction = "必须提供中英双语字幕。" if settings.get("bilingual", True) else "只使用用户当前语言输出字幕。"
-    mathjax_instruction = "需要使用 MathJax 渲染数学公式；请在生成的单文件 HTML 中引入 MathJax CDN，并用 LaTeX 语法书写公式。" if settings.get("mathjax") else "不要引入 MathJax，数学表达使用普通文本或 SVG 图形呈现。"
-    
+    return {
+        "style": allowed_styles.get(settings.get("style"), allowed_styles["cinematic"]),
+        "duration": allowed_durations.get(settings.get("duration"), allowed_durations["medium"]),
+        "ratio": allowed_ratios.get(settings.get("ratio"), allowed_ratios["16:9"]),
+        "depth": allowed_depths.get(settings.get("depth"), allowed_depths["standard"]),
+        "resolution": allowed_resolutions.get(settings.get("resolution"), allowed_resolutions["1080p"]),
+        "narration": "旁白文案要更丰富，字幕节奏要清楚。" if settings.get("narration") else "旁白文字保持精炼，只保留关键解释。",
+        "bilingual": "必须提供中英双语字幕。" if settings.get("bilingual", True) else "只使用用户当前语言输出字幕。",
+        "mathjax": "需要使用 MathJax 渲染数学公式；请在生成的单文件 HTML 中引入 MathJax CDN，并用 LaTeX 语法书写公式。" if settings.get("mathjax") else "不要引入 MathJax，数学表达使用普通文本或 SVG 图形呈现。",
+    }
+
+
+# -----------------------------------------------------------------------
+# 2. 核心：流式生成器 (现在会使用 history)
+# -----------------------------------------------------------------------
+async def llm_event_stream(
+    topic: str,
+    history: Optional[List[dict]] = None,
+    model: str = None, # Will use MODEL from config if not specified
+    settings: Optional[Dict[str, Any]] = None,
+) -> AsyncGenerator[str, None]:
+    history = history or []
+    settings = settings or {}
+    setting_instructions = build_generation_setting_instructions(settings)
+
     # Use configured model if not specified
     if model is None:
         model = MODEL
@@ -196,14 +206,14 @@ async def llm_event_stream(
 要动态的,要像一个完整的,正在播放的视频。包含一个完整的过程，能把知识点讲清楚。
 页面极为精美，好看，有设计感，同时能够很好的传达知识。知识和图像要准确
 生成规格：
-- 风格：{style_instruction}
-- 时长：{duration_instruction}
-- 画幅：{ratio_instruction}
-- 容器尺寸：{resolution_instruction}
-- 讲解深度：{depth_instruction}
-- 旁白：{narration_instruction}
-- 字幕：{bilingual_instruction}
-- 数学公式：{mathjax_instruction}
+- 风格：{setting_instructions['style']}
+- 时长：{setting_instructions['duration']}
+- 画幅：{setting_instructions['ratio']}
+- 容器尺寸：{setting_instructions['resolution']}
+- 讲解深度：{setting_instructions['depth']}
+- 旁白：{setting_instructions['narration']}
+- 字幕：{setting_instructions['bilingual']}
+- 数学公式：{setting_instructions['mathjax']}
 不需要任何互动按钮,直接开始播放
 使用和谐好看，广泛采用的浅色配色方案，使用很多的，丰富的视觉元素。
 **请保证任何一个元素都在指定分辨率的容器中被摆在了正确的位置，避免穿模，字幕遮挡，图形位置错误等等问题影响正确的视觉传达**
@@ -253,6 +263,141 @@ html+css+js+svg，放进一个html里，直接只给出html，不用其它总结
     debug_response_end()
 
     debug_llm("stream complete", "[DONE]")
+    yield 'data: {"event":"[DONE]"}\n\n'
+
+
+def parse_settings_form(settings: str) -> Dict[str, Any]:
+    try:
+        parsed = json.loads(settings or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+async def extract_pdf_text(pdf_file: UploadFile) -> Dict[str, Any]:
+    filename = pdf_file.filename or "paper.pdf"
+    content_type = pdf_file.content_type or ""
+    if not filename.lower().endswith(".pdf") and "pdf" not in content_type.lower():
+        raise ValueError("请上传 PDF 文件")
+
+    content = await pdf_file.read()
+    if not content:
+        raise ValueError("PDF 文件为空")
+    if len(content) > MAX_PAPER_UPLOAD_BYTES:
+        raise ValueError(f"PDF 文件过大，请上传不超过 {MAX_PAPER_UPLOAD_BYTES // 1024 // 1024}MB 的文件")
+
+    try:
+        reader = PdfReader(io.BytesIO(content))
+    except Exception as exc:
+        raise ValueError("PDF 解析失败，请确认文件未损坏") from exc
+
+    page_texts = []
+    for index, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
+        text = text.strip()
+        if text:
+            page_texts.append(f"[Page {index}]\n{text}")
+
+    paper_text = "\n\n".join(page_texts).strip()
+    if not paper_text:
+        raise ValueError("未能从 PDF 中提取文字，暂不支持扫描版或图片型论文")
+
+    truncated = len(paper_text) > MAX_PAPER_TEXT_CHARS
+    if truncated:
+        paper_text = paper_text[:MAX_PAPER_TEXT_CHARS]
+
+    return {
+        "filename": filename,
+        "text": paper_text,
+        "page_count": len(reader.pages),
+        "truncated": truncated,
+    }
+
+
+async def paper_llm_event_stream(
+    paper_text: str,
+    filename: str,
+    focus: str = "",
+    model: str = None,
+    settings: Optional[Dict[str, Any]] = None,
+    truncated: bool = False,
+) -> AsyncGenerator[str, None]:
+    settings = settings or {}
+    setting_instructions = build_generation_setting_instructions(settings)
+    if model is None:
+        model = MODEL
+
+    focus_instruction = (
+        f"用户指定重点：{focus}。请围绕该章节或概念展开，但必须结合整篇论文上下文说明其动机、方法和意义。"
+        if focus.strip()
+        else "用户未指定重点。请生成整篇论文的动画讲解，覆盖研究背景、核心问题、方法框架、关键实验/结果、结论与启发。"
+    )
+    truncation_instruction = "论文原文因长度限制已被截断，请基于已提供内容生成，并避免声称看到了未提供的部分。" if truncated else "论文原文已完整提供给你。"
+
+    system_prompt = f"""你是一个论文动画讲解视频导演和技术讲师。请根据用户上传的 PDF 论文内容，生成一个非常精美、可直接播放的动态动画讲解页面。
+{focus_instruction}
+{truncation_instruction}
+生成规格：
+- 风格：{setting_instructions['style']}
+- 时长：{setting_instructions['duration']}
+- 画幅：{setting_instructions['ratio']}
+- 容器尺寸：{setting_instructions['resolution']}
+- 讲解深度：{setting_instructions['depth']}
+- 旁白：{setting_instructions['narration']}
+- 字幕：{setting_instructions['bilingual']}
+- 数学公式：{setting_instructions['mathjax']}
+内容要求：
+- 把论文讲成一个完整的视频脚本和视觉叙事，而不是静态摘要。
+- 需要准确呈现论文的核心贡献、关键术语、方法流程和因果关系。
+- 如果论文包含公式、模型结构、实验对比或数据流程，请用 SVG/HTML/CSS 动画清晰表达。
+- 不需要任何互动按钮，打开后直接开始播放。
+- 使用和谐好看、广泛采用的浅色配色方案，使用丰富的视觉元素。
+- 请保证任何元素都在指定分辨率的容器中正确摆放，避免字幕遮挡、图形穿模和布局错位。
+输出要求：
+- 只输出一个完整的单文件 HTML。
+- HTML 内联 CSS、JS、SVG；不要输出解释、总结或 Markdown 代码块外的文字。"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"论文文件名：{filename}\n\n论文内容：\n{paper_text}"},
+    ]
+
+    debug_conversation("openai-compatible", model, messages, settings)
+
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True,
+            temperature=0.8,
+        )
+    except OpenAIError as e:
+        debug_llm("openai-compatible error", str(e))
+        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        return
+
+    debug_response_start("openai-compatible")
+    async for chunk in response:
+        choices = getattr(chunk, "choices", None)
+        if not choices:
+            continue
+
+        choice = choices[0]
+        delta = getattr(choice, "delta", None)
+        if not delta:
+            continue
+
+        token = getattr(delta, "content", None) or ""
+        if not token:
+            continue
+
+        debug_response_chunk(token)
+        payload = json.dumps({"token": token}, ensure_ascii=False)
+        yield f"data: {payload}\n\n"
+        await asyncio.sleep(0.001)
+
+    debug_response_end()
+    debug_llm("paper stream complete", "[DONE]")
     yield 'data: {"event":"[DONE]"}\n\n'
 
 # -----------------------------------------------------------------------
@@ -566,6 +711,51 @@ async def generate(
         "X-Accel-Buffering": "no",
     }
     return StreamingResponse(wrapped_stream(), headers=headers)
+
+
+@app.post("/paper/generate")
+async def generate_paper(
+    request: Request,
+    pdf: UploadFile = File(...),
+    focus: str = Form(""),
+    settings: str = Form("{}"),
+):
+    parsed_settings = parse_settings_form(settings)
+    queued = generation_semaphore.locked()
+
+    async def event_generator():
+        if queued:
+            payload = json.dumps({"event": "queued"}, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+
+        async with generation_semaphore:
+            if queued:
+                payload = json.dumps({"event": "started"}, ensure_ascii=False)
+                yield f"data: {payload}\n\n"
+
+            try:
+                paper = await extract_pdf_text(pdf)
+                async for chunk in paper_llm_event_stream(
+                    paper["text"],
+                    paper["filename"],
+                    focus=focus.strip(),
+                    settings=parsed_settings,
+                    truncated=paper["truncated"],
+                ):
+                    if await request.is_disconnected():
+                        debug_llm("paper client disconnected")
+                        break
+                    yield chunk
+            except Exception as e:
+                debug_llm("paper streaming error", str(e))
+                yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+
+    headers = {
+        "Cache-Control": "no-store",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_generator(), headers=headers)
 
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):

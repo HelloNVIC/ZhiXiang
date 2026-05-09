@@ -7,3 +7,5 @@ pytz
 google-genai
 requests
 qrcode[pil]
+python-multipart
+pypdf
