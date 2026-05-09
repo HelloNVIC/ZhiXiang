@@ -110,6 +110,17 @@ document.addEventListener('DOMContentLoaded', () => {
         passphrasePlaceholder: { zh: "暗号", en: "Passphrase" },
         passphraseSubmit: { zh: "进入", en: "Enter" },
         passphraseError: { zh: "暗号错误", en: "Invalid passphrase" },
+        paperExplain: { zh: "论文解释", en: "Explain paper" },
+        paperUploadTitle: { zh: "上传 PDF 论文", en: "Upload PDF paper" },
+        paperFileLabel: { zh: "论文 PDF", en: "Paper PDF" },
+        paperFocusLabel: { zh: "指定章节或概念（可选）", en: "Section or concept to explain (optional)" },
+        paperFocusPlaceholder: { zh: "例如：第三章方法、Transformer 注意力机制、实验结果", en: "E.g. Method section, Transformer attention, experiment results" },
+        paperContinueConfig: { zh: "继续配置", en: "Continue to settings" },
+        paperFileRequired: { zh: "请先上传 PDF 论文", en: "Please upload a PDF paper first" },
+        paperOnlyPdf: { zh: "仅支持 PDF 文件", en: "Only PDF files are supported" },
+        paperThinking: { zh: "NVIC Agent 正在阅读论文并规划动画讲解，请稍后。这可能需要数十秒至数分钟...", en: "NVIC Agent is reading the paper and planning the animation. This may take tens of seconds to minutes..." },
+        paperUserMessage: { zh: "论文解释", en: "Paper explanation" },
+        paperFocusPrefix: { zh: "指定内容", en: "Focus" },
         mobileUnsupported: { zh: "请在PC端访问，移动端暂不支持", en: "Please visit on a PC. Mobile is not supported yet." },
     };
 
@@ -121,6 +132,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const passphraseError = document.getElementById('passphrase-error');
     const initialForm = document.getElementById('initial-form');
     const initialInput = document.getElementById('initial-input');
+    const paperExplainButton = document.getElementById('paper-explain-button');
+    const paperUploadModal = document.getElementById('paper-upload-modal');
+    const paperUploadForm = document.getElementById('paper-upload-form');
+    const paperFileInput = document.getElementById('paper-file-input');
+    const paperFileName = document.getElementById('paper-file-name');
+    const paperFocusInput = document.getElementById('paper-focus-input');
+    const paperUploadClose = document.getElementById('paper-upload-close');
     const chatForm = document.getElementById('chat-form');
     const chatInput = document.getElementById('chat-input');
     const chatLog = document.getElementById('chat-log');
@@ -187,6 +205,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeGenerationController = null;
     let pendingGenerationTopic = '';
     let pendingGenerationIsInitial = false;
+    let pendingGenerationMode = 'concept';
+    let pendingPaperFile = null;
+    let pendingPaperFocus = '';
     let pendingShareHtml = '';
     let latestShareDetails = null;
     let previewConfirmResolver = null;
@@ -304,18 +325,137 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        pendingGenerationMode = 'concept';
         pendingGenerationTopic = topic;
         pendingGenerationIsInitial = true;
         openSettingsPanel(true);
     }
 
-    function trackUserInput(topic, source) {
-        window.umami?.track('user_input', {
-            source,
-            text: topic,
-            length: topic.length,
-            language: currentLang,
-        });
+    function updatePaperFileName() {
+        if (!paperFileName) return;
+        paperFileName.textContent = paperFileInput?.files?.[0]?.name || '';
+    }
+
+    function openPaperUploadModal() {
+        paperUploadModal?.classList.add('visible');
+        paperFileInput && (paperFileInput.value = '');
+        paperFocusInput && (paperFocusInput.value = '');
+        updatePaperFileName();
+        paperFileInput?.focus();
+    }
+
+    function closePaperUploadModal() {
+        paperUploadModal?.classList.remove('visible');
+    }
+
+    function isPdfFile(file) {
+        return Boolean(file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')));
+    }
+
+    function handlePaperUploadSubmit(e) {
+        e.preventDefault();
+        const file = paperFileInput?.files?.[0];
+        if (!file) {
+            showWarning(translations.paperFileRequired[currentLang]);
+            return;
+        }
+        if (!isPdfFile(file)) {
+            showWarning(translations.paperOnlyPdf[currentLang]);
+            return;
+        }
+
+        pendingGenerationMode = 'paper';
+        pendingPaperFile = file;
+        pendingPaperFocus = paperFocusInput?.value.trim() || '';
+        closePaperUploadModal();
+        openSettingsPanel(true);
+    }
+
+    async function consumeGenerationResponse(response, displayTopic, agentThinkingMessage, outputElement, options = {}) {
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullResponse = '';
+        let queueWarningVisible = false;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+
+                const jsonStr = line.substring(6);
+                if (jsonStr.includes('[DONE]')) {
+                    accumulatedCode = extractHtmlFromResponse(fullResponse);
+                    if (options.saveAssistantHistory !== false) {
+                        conversationHistory.push({ role: 'assistant', content: fullResponse });
+                    }
+                    markOutputAsComplete(outputElement);
+
+                    if (!accumulatedCode || !isHtmlContentValid(accumulatedCode)) {
+                        console.warn('Unable to parse renderable HTML from full response:', fullResponse);
+                        appendRetryPrompt(displayTopic);
+                        scrollToBottom();
+                        return;
+                    }
+
+                    try {
+                        appendAnimationPlayer(accumulatedCode, displayTopic);
+                    } catch (err) {
+                        console.error('appendAnimationPlayer failed:', err);
+                        appendRetryPrompt(displayTopic);
+                        scrollToBottom();
+                        return;
+                    }
+
+                    scrollToBottom();
+                    return;
+                }
+
+                let data;
+                try {
+                    data = JSON.parse(jsonStr);
+                } catch (err) {
+                    console.error('Failed to parse JSON:', jsonStr);
+                    throw new LLMParseError('Invalid response format from server.');
+                }
+
+                if (data.event === 'queued') {
+                    queueWarningVisible = true;
+                    showWarning(translations.generationQueued[currentLang], {
+                        persistent: true,
+                        blocking: true,
+                        loading: true,
+                        cancelable: true,
+                        cancelText: translations.cancelQueuedTask[currentLang],
+                    });
+                    continue;
+                }
+
+                if (data.event === 'started') {
+                    if (queueWarningVisible) {
+                        forceHideWarning();
+                        showWarning(translations.generationStarted[currentLang]);
+                        queueWarningVisible = false;
+                    }
+                    continue;
+                }
+
+                if (data.error) throw new LLMParseError(data.error);
+
+                const token = data.token || '';
+                if (agentThinkingMessage) agentThinkingMessage.remove();
+                fullResponse += token;
+                updateOutputBlock(outputElement, token);
+            }
+        }
     }
 
     async function startGeneration(topic, options = {}) {
@@ -330,8 +470,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (stopGenerationButton) stopGenerationButton.hidden = false;
         accumulatedCode = '';
-        let fullResponse = '';
-        let queueWarningVisible = false;
         const outputElement = appendOutputBlock();
 
         try {
@@ -341,89 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ topic: topic, history: conversationHistory, settings: getGenerationSettings() }),
                 signal: activeGenerationController.signal
             });
-
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n\n');
-                buffer = lines.pop();
-
-                for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue;
-
-                    const jsonStr = line.substring(6);
-                    if (jsonStr.includes('[DONE]')) {
-                        console.log('Streaming complete');
-                        accumulatedCode = extractHtmlFromResponse(fullResponse);
-                        conversationHistory.push({ role: 'assistant', content: fullResponse });
-                        markOutputAsComplete(outputElement);
-
-                        if (!accumulatedCode || !isHtmlContentValid(accumulatedCode)) {
-                            console.warn('Unable to parse renderable HTML from full response:', fullResponse);
-                            appendRetryPrompt(topic);
-                            scrollToBottom();
-                            return;
-                        }
-
-                        try {
-                            appendAnimationPlayer(accumulatedCode, topic);
-                        } catch (err) {
-                            console.error('appendAnimationPlayer failed:', err);
-                            appendRetryPrompt(topic);
-                            scrollToBottom();
-                            return;
-                        }
-
-                        scrollToBottom();
-                        return;
-                    }
-
-                    let data;
-                    try {
-                        data = JSON.parse(jsonStr);
-                    } catch (err) {
-                        console.error('Failed to parse JSON:', jsonStr);
-                        throw new LLMParseError('Invalid response format from server.');
-                    }
-
-                    if (data.event === 'queued') {
-                        queueWarningVisible = true;
-                        showWarning(translations.generationQueued[currentLang], {
-                            persistent: true,
-                            blocking: true,
-                            loading: true,
-                            cancelable: true,
-                            cancelText: translations.cancelQueuedTask[currentLang],
-                        });
-                        continue;
-                    }
-
-                    if (data.event === 'started') {
-                        if (queueWarningVisible) {
-                            forceHideWarning();
-                            showWarning(translations.generationStarted[currentLang]);
-                            queueWarningVisible = false;
-                        }
-                        continue;
-                    }
-
-                    if (data.error) {
-                        throw new LLMParseError(data.error);
-                    }
-                    const token = data.token || '';
-                    if (agentThinkingMessage) agentThinkingMessage.remove();
-                    fullResponse += token;
-                    updateOutputBlock(outputElement, token);
-                }
-            }
+            await consumeGenerationResponse(response, topic, agentThinkingMessage, outputElement);
         } catch (error) {
             console.error("Streaming failed:", error);
             if (agentThinkingMessage) agentThinkingMessage.remove();
@@ -443,13 +499,67 @@ document.addEventListener('DOMContentLoaded', () => {
             appendErrorMessage(translations.errorMessage[currentLang], error);
             if (outputElement) markOutputAsComplete(outputElement);
         } finally {
-        if (submitButton) {
-            submitButton.disabled = false;
-            submitButton.classList.remove('disabled');
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.classList.remove('disabled');
+            }
+            if (stopGenerationButton) stopGenerationButton.hidden = true;
+            activeGenerationController = null;
         }
-        if (stopGenerationButton) stopGenerationButton.hidden = true;
-        activeGenerationController = null;
     }
+
+    async function startPaperGeneration(file, focus, displayTopic) {
+        if (!file) return;
+        if (!displayTopic) displayTopic = `${translations.paperUserMessage[currentLang]}：${file.name}`;
+        appendUserMessage(displayTopic);
+        const agentThinkingMessage = appendAgentStatus(translations.paperThinking[currentLang]);
+        const submitButton = document.querySelector('.submit-button');
+        activeGenerationController = new AbortController();
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.classList.add('disabled');
+        }
+        if (stopGenerationButton) stopGenerationButton.hidden = false;
+        accumulatedCode = '';
+        const outputElement = appendOutputBlock();
+        const formData = new FormData();
+        formData.append('pdf', file);
+        formData.append('focus', focus || '');
+        formData.append('settings', JSON.stringify(getGenerationSettings()));
+
+        try {
+            const response = await fetch(`${config.apiBaseUrl}/paper/generate`, {
+                method: 'POST',
+                body: formData,
+                signal: activeGenerationController.signal
+            });
+            await consumeGenerationResponse(response, displayTopic, agentThinkingMessage, outputElement, { saveAssistantHistory: false });
+        } catch (error) {
+            console.error("Paper streaming failed:", error);
+            if (agentThinkingMessage) agentThinkingMessage.remove();
+
+            let displayMessage = translations.errorFetchFailed[currentLang];
+            if (error.name === 'AbortError') {
+                displayMessage = translations.generationStopped[currentLang];
+            } else if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+                displayMessage = translations.errorFetchFailed[currentLang];
+            } else if (error.message.includes('status: 429')) {
+                displayMessage = translations.errorTooManyRequests[currentLang];
+            } else if (error instanceof LLMParseError) {
+                displayMessage = translations.errorLLMParseError[currentLang];
+            }
+
+            showWarning(displayMessage);
+            appendErrorMessage(translations.errorMessage[currentLang], error);
+            if (outputElement) markOutputAsComplete(outputElement);
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.classList.remove('disabled');
+            }
+            if (stopGenerationButton) stopGenerationButton.hidden = true;
+            activeGenerationController = null;
+        }
     }
 
     function switchToChatView() {
@@ -485,6 +595,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function confirmGenerationFromSettings() {
+        if (pendingGenerationMode === 'paper') {
+            if (!pendingPaperFile) {
+                closeSettingsPanel();
+                return;
+            }
+
+            if (settingDuration?.value === 'preview' && !await showPreviewConfirm()) {
+                return;
+            }
+
+            switchToChatView();
+            const displayTopic = `${translations.paperUserMessage[currentLang]}：${pendingPaperFile.name}${pendingPaperFocus ? `\n${translations.paperFocusPrefix[currentLang]}：${pendingPaperFocus}` : ''}`;
+            startPaperGeneration(pendingPaperFile, pendingPaperFocus, displayTopic);
+            pendingPaperFile = null;
+            pendingPaperFocus = '';
+            pendingGenerationMode = 'concept';
+            closeSettingsPanel();
+            return;
+        }
+
         const topic = pendingGenerationTopic;
         if (!topic) {
             closeSettingsPanel();
@@ -508,6 +638,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         pendingGenerationTopic = '';
         pendingGenerationIsInitial = false;
+        pendingGenerationMode = 'concept';
         closeSettingsPanel();
     }
 
@@ -791,6 +922,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         initialForm.addEventListener('submit', handleFormSubmit);
+        paperExplainButton?.addEventListener('click', openPaperUploadModal);
+        paperUploadClose?.addEventListener('click', closePaperUploadModal);
+        paperUploadModal?.addEventListener('click', (e) => {
+            if (e.target === paperUploadModal) closePaperUploadModal();
+        });
+        paperUploadForm?.addEventListener('submit', handlePaperUploadSubmit);
+        paperFileInput?.addEventListener('change', updatePaperFileName);
         passphraseForm?.addEventListener('submit', handlePassphraseSubmit);
         initPassphraseGate();
         chatForm.addEventListener('submit', handleFormSubmit);

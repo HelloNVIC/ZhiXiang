@@ -157,6 +157,8 @@ button:disabled {
 #initial-input::placeholder { font-weight: 400; }
 .initial-form button { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 46px; height: 46px; background: #000; border: 1px solid #000; border-radius: 0; color: #fff; cursor: pointer; display: grid; place-items: center; transition: background-color 0.2s, color 0.2s; }
 .initial-form button:hover { background-color: #fff; color: #000; }
+.paper-entry-button { margin-top: 24px; min-height: 50px; padding: 0 28px; border: 1px solid #000; background: #fff; color: #000; box-shadow: 6px 6px 0 #000; font: inherit; font-size: 0.95rem; font-weight: 900; letter-spacing: 0.08em; cursor: pointer; transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease; }
+.paper-entry-button:hover { background: #000; color: #fff; transform: translate(-2px, -2px); }
 
 
 .initial-footer { margin-top: 2.5rem; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 0.8rem; font-size: 0.92rem; font-weight: 600; }
@@ -351,8 +353,16 @@ button:disabled {
 
 .share-form { display: grid; gap: 14px; text-align: left; max-width: 520px; }
 .share-form p { margin-bottom: 0; font-weight: 900; text-align: center; }
-.share-form label { display: grid; gap: 8px; font-size: 0.9rem; font-weight: 800; }
-.share-form input, .share-form select { min-height: 44px; border: 1px solid #000; padding: 0 12px; background: #fff; color: #000; font: inherit; }
+.share-form label { display: grid; gap: 8px; min-width: 0; font-size: 0.9rem; font-weight: 800; }
+.share-form input, .share-form select, .share-form textarea { min-height: 44px; max-width: 100%; box-sizing: border-box; border: 1px solid #000; padding: 0 12px; background: #fff; color: #000; font: inherit; }
+.share-form textarea { min-height: 112px; padding: 12px; resize: vertical; line-height: 1.6; }
+.paper-upload-form { width: min(520px, calc(100vw - 32px)); overflow: hidden; border: 1px solid #000; border-radius: 0; box-shadow: 8px 8px 0 #000; }
+.paper-upload-form input[type="file"] { width: 100%; min-width: 0; color: transparent; padding: 6px; cursor: pointer; }
+.paper-upload-form input[type="file"]::file-selector-button { min-height: 32px; margin-right: 12px; border: 1px solid #000; background: #000; color: #fff; padding: 0 14px; font: inherit; font-weight: 900; cursor: pointer; transition: background-color 0.2s, color 0.2s; }
+.paper-upload-form input[type="file"]:hover::file-selector-button { background: #fff; color: #000; }
+.paper-upload-form input[type="file"]::-webkit-file-upload-button { min-height: 32px; margin-right: 12px; border: 1px solid #000; background: #000; color: #fff; padding: 0 14px; font: inherit; font-weight: 900; cursor: pointer; transition: background-color 0.2s, color 0.2s; }
+.paper-upload-form input[type="file"]:hover::-webkit-file-upload-button { background: #fff; color: #000; }
+.paper-file-name { display: block; max-width: 100%; min-height: 1.4em; overflow-wrap: anywhere; word-break: break-word; white-space: normal; color: #000; font-size: 0.86rem; font-weight: 700; line-height: 1.45; }
 .share-result { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid #000; }
 .share-result[hidden] { display: none; }
 .share-meta { display: grid; grid-template-columns: 88px 1fr; gap: 10px; align-items: start; font-size: 0.86rem; }
