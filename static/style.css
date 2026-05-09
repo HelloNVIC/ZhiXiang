@@ -349,6 +349,24 @@ button:disabled {
     color: var(--text-secondary);
 }
 
+.share-form { display: grid; gap: 14px; text-align: left; max-width: 520px; }
+.share-form p { margin-bottom: 0; font-weight: 900; text-align: center; }
+.share-form label { display: grid; gap: 8px; font-size: 0.9rem; font-weight: 800; }
+.share-form input, .share-form select { min-height: 44px; border: 1px solid #000; padding: 0 12px; background: #fff; color: #000; font: inherit; }
+.share-result { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid #000; }
+.share-result[hidden] { display: none; }
+.share-meta { display: grid; grid-template-columns: 88px 1fr; gap: 10px; align-items: start; font-size: 0.86rem; }
+.share-meta span { color: #333; font-weight: 800; }
+.share-meta strong { word-break: break-all; }
+.share-qr { width: 180px; height: 180px; justify-self: center; border: 1px solid #000; background: #fff; padding: 8px; }
+
+.preview-confirm-content { display: grid; gap: 18px; border: 1px solid #000; border-radius: 0; box-shadow: 8px 8px 0 #000; }
+#preview-confirm-modal { z-index: 1003; }
+.preview-confirm-content p { margin: 0; font-weight: 900; color: #000; }
+.preview-confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.modal-button.secondary { background: #fff; color: #000; border: 1px solid #000; }
+.modal-button.secondary:hover { background: #000; color: #fff; }
+
 /* 遮罩层 */
 .overlay {
     position: fixed;

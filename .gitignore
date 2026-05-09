@@ -216,5 +216,6 @@ __MACOSX/
 **/Thumbs.db
 **/ehthumbs.db
 credentials.json
+shared_html/
 CLAUDE.md
 .claude/
