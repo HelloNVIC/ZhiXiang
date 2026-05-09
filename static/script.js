@@ -38,6 +38,10 @@ document.addEventListener('DOMContentLoaded', () => {
         styleAcademic: { zh: "教学讲解", en: "Academic" },
         styleFuturistic: { zh: "未来科技", en: "Futuristic" },
         durationLabel: { zh: "视频节奏", en: "Pacing" },
+        durationPreview: { zh: "快速预览", en: "Quick preview" },
+        previewConfirmTitle: { zh: "当前为快速预览模式，如需全量生成请选择其他 视频节奏 ，是否继续？", en: "Quick preview mode is selected. Choose another video pacing option for full generation. Continue?" },
+        previewConfirmCancel: { zh: "返回修改", en: "Go back" },
+        previewConfirmContinue: { zh: "继续生成", en: "Continue" },
         durationShort: { zh: "短：30 秒", en: "Short: 30s" },
         durationMedium: { zh: "标准：60 秒", en: "Standard: 60s" },
         durationLong: { zh: "长：90 秒", en: "Long: 90s" },
@@ -70,6 +74,29 @@ document.addEventListener('DOMContentLoaded', () => {
         codeComplete: { zh: "代码已完成", en: "Code generated" },
         openInNewWindow: { zh: "在新窗口中打开", en: "Open in new window" },
         saveAsHTML: { zh: "保存为 HTML", en: "Save as HTML" },
+        shareHTMLLink: { zh: "分享 HTML 链接", en: "Share HTML link" },
+        shareExpirationLabel: { zh: "链接有效期", en: "Link expiration" },
+        shareExpire1h: { zh: "1 小时", en: "1 hour" },
+        shareExpire3h: { zh: "3 小时", en: "3 hours" },
+        shareExpire6h: { zh: "6 小时", en: "6 hours" },
+        shareExpire8h: { zh: "8 小时", en: "8 hours" },
+        shareExpire1d: { zh: "1 天", en: "1 day" },
+        shareExpire3d: { zh: "3 天", en: "3 days" },
+        shareExpire7d: { zh: "7 天", en: "7 days" },
+        shareExpireForever: { zh: "永久", en: "Forever" },
+        sharePasswordLabel: { zh: "访问密码", en: "Access password" },
+        sharePasswordPlaceholder: { zh: "请输入 4-20 位数字密码", en: "Enter a 4-20 digit password" },
+        shareCreateLink: { zh: "创建并复制链接", en: "Create and copy link" },
+        shareCopyDetails: { zh: "复制详细信息", en: "Copy details" },
+        shareDetailsCopied: { zh: "分享详细信息已复制", en: "Share details copied" },
+        sharePasswordRequired: { zh: "请输入 4-20 位数字密码", en: "Enter a 4-20 digit password" },
+        shareResultUrl: { zh: "链接", en: "Link" },
+        shareResultStart: { zh: "生效时间", en: "Starts at" },
+        shareResultEnd: { zh: "失效时间", en: "Expires at" },
+        shareNeverExpires: { zh: "永久有效", en: "Never expires" },
+        shareResultPassword: { zh: "访问密码", en: "Access password" },
+        htmlLinkCopied: { zh: "HTML 链接已复制，详细信息如下", en: "HTML link copied. Details are shown below." },
+        shareFailed: { zh: "分享链接创建失败", en: "Failed to create share link" },
         exportAsVideo: { zh: "导出为视频", en: "Export as Video" },
         featureComingSoon: { zh: "该功能正在开发中，将在不久的将来推出。\n 请关注我的官方 GitHub 仓库以获取最新动态！", en: "This feature is under development and will be available soon.\n Follow our official GitHub repository for the latest updates!" },
         visitGitHub: { zh: "访问 GitHub", en: "Visit GitHub" },
@@ -105,6 +132,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const languageSwitcher = document.getElementById('language-switcher');
     const placeholderContainer = document.getElementById('animated-placeholder');
     const featureModal = document.getElementById('feature-modal');
+    const previewConfirmModal = document.getElementById('preview-confirm-modal');
+    const previewConfirmClose = document.getElementById('preview-confirm-close');
+    const previewConfirmCancel = document.getElementById('preview-confirm-cancel');
+    const previewConfirmContinue = document.getElementById('preview-confirm-continue');
+    const shareModal = document.getElementById('share-modal');
+    const shareForm = document.getElementById('share-form');
+    const shareExpiration = document.getElementById('share-expiration');
+    const sharePassword = document.getElementById('share-password');
+    const shareSubmitButton = document.getElementById('share-submit-button');
+    const shareResult = document.getElementById('share-result');
+    const shareResultUrl = document.getElementById('share-result-url');
+    const shareResultStart = document.getElementById('share-result-start');
+    const shareResultEnd = document.getElementById('share-result-end');
+    const shareResultPassword = document.getElementById('share-result-password');
+    const shareQr = document.getElementById('share-qr');
+    const shareModalCloseButton = document.getElementById('share-modal-close-button');
     const modalGitHubButton = document.getElementById('modal-github-button');
     const modalCloseButton = document.getElementById('modal-close-button');
     const settingsPanel = document.getElementById('settings-panel');
@@ -144,6 +187,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeGenerationController = null;
     let pendingGenerationTopic = '';
     let pendingGenerationIsInitial = false;
+    let pendingShareHtml = '';
+    let latestShareDetails = null;
+    let previewConfirmResolver = null;
 
     function unlockPassphraseGate() {
         passphraseGate?.classList.add('hidden');
@@ -424,10 +470,28 @@ document.addEventListener('DOMContentLoaded', () => {
         settingsToggles.forEach(button => button.classList.remove('is-attention'));
     }
 
-    function confirmGenerationFromSettings() {
+    function showPreviewConfirm() {
+        previewConfirmModal.classList.add('visible');
+        return new Promise(resolve => {
+            previewConfirmResolver = resolve;
+        });
+    }
+
+    function resolvePreviewConfirm(confirmed) {
+        previewConfirmModal.classList.remove('visible');
+        if (!previewConfirmResolver) return;
+        previewConfirmResolver(confirmed);
+        previewConfirmResolver = null;
+    }
+
+    async function confirmGenerationFromSettings() {
         const topic = pendingGenerationTopic;
         if (!topic) {
             closeSettingsPanel();
+            return;
+        }
+
+        if (settingDuration?.value === 'preview' && !await showPreviewConfirm()) {
             return;
         }
 
@@ -538,6 +602,76 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function createHtmlBlobUrl(htmlContent) {
+        const blob = new Blob([htmlContent], { type: 'text/html' });
+        return URL.createObjectURL(blob);
+    }
+
+    function openShareModal(htmlContent) {
+        pendingShareHtml = htmlContent;
+        sharePassword.value = '';
+        shareExpiration.value = '1h';
+        shareResult.hidden = true;
+        latestShareDetails = null;
+        shareSubmitButton.textContent = translations.shareCreateLink[currentLang];
+        shareModal.classList.add('visible');
+        sharePassword.focus();
+    }
+
+    function closeShareModal() {
+        shareModal.classList.remove('visible');
+        pendingShareHtml = '';
+    }
+
+    function formatShareTime(value) {
+        return new Date(value).toLocaleString(currentLang === 'zh' ? 'zh-CN' : 'en-US');
+    }
+
+    function getShareDetailsText(data = latestShareDetails) {
+        if (!data) return '';
+        const expiresAt = data.expiresAt ? formatShareTime(data.expiresAt) : translations.shareNeverExpires[currentLang];
+        return [
+            `${translations.shareResultUrl[currentLang]}：${data.url}`,
+            `${translations.shareResultStart[currentLang]}：${formatShareTime(data.createdAt)}`,
+            `${translations.shareResultEnd[currentLang]}：${expiresAt}`,
+            `${translations.shareResultPassword[currentLang]}：${data.password}`,
+        ].join('\n');
+    }
+
+    async function copyShareDetails() {
+        await navigator.clipboard.writeText(getShareDetailsText());
+        showWarning(translations.shareDetailsCopied[currentLang]);
+    }
+
+    function renderShareResult(data) {
+        latestShareDetails = data;
+        shareResultUrl.value = data.url;
+        shareResultStart.textContent = formatShareTime(data.createdAt);
+        shareResultEnd.textContent = data.expiresAt ? formatShareTime(data.expiresAt) : translations.shareNeverExpires[currentLang];
+        shareResultPassword.textContent = data.password;
+        shareResult.hidden = false;
+        shareSubmitButton.textContent = translations.shareCopyDetails[currentLang];
+        shareQr.src = data.qrCode;
+    }
+
+    async function shareHtmlLink(htmlContent, expiresIn, password, previewSize) {
+        const response = await fetch(`${config.apiBaseUrl}/share`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                html: htmlContent,
+                expiresIn,
+                password,
+                sourceWidth: previewSize.sourceWidth,
+                sourceHeight: previewSize.sourceHeight,
+            }),
+        });
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        renderShareResult(data);
+        await copyShareDetails();
+    }
+
     function appendAnimationPlayer(htmlContent, topic) {
         console.log('Appending animation player with topic:', topic);
         const node = templates.player.content.cloneNode(true);
@@ -563,17 +697,18 @@ document.addEventListener('DOMContentLoaded', () => {
         iframe.srcdoc = htmlContent;
 
         playerElement.querySelector('.open-new-window').addEventListener('click', () => {
-            const blob = new Blob([htmlContent], { type: 'text/html' });
-            window.open(URL.createObjectURL(blob), '_blank');
+            window.open(createHtmlBlobUrl(htmlContent), '_blank');
         });
         playerElement.querySelector('.save-html').addEventListener('click', () => {
-            const blob = new Blob([htmlContent], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
+            const url = createHtmlBlobUrl(htmlContent);
             const a = Object.assign(document.createElement('a'), { href: url, download: `${topic.replace(/\s/g, '_') || 'animation'}.html` });
             document.body.appendChild(a);
             a.click();
             URL.revokeObjectURL(url);
             a.remove();
+        });
+        playerElement.querySelector('.share-html')?.addEventListener('click', () => {
+            openShareModal(htmlContent);
         });
         playerElement.querySelector('.export-video')?.addEventListener('click', () => {
             featureModal.querySelector('p').textContent = translations.featureComingSoon[currentLang];
@@ -674,6 +809,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target === settingsPanel) closeSettingsPanel();
         });
         settingsConfirm.addEventListener('click', confirmGenerationFromSettings);
+        previewConfirmClose?.addEventListener('click', () => resolvePreviewConfirm(false));
+        previewConfirmCancel?.addEventListener('click', () => resolvePreviewConfirm(false));
+        previewConfirmContinue?.addEventListener('click', () => resolvePreviewConfirm(true));
+        previewConfirmModal?.addEventListener('click', (e) => {
+            if (e.target === previewConfirmModal) resolvePreviewConfirm(false);
+        });
         languageSwitcher?.addEventListener('click', (e) => {
             const target = e.target.closest('button');
             if (target) setLanguage(target.dataset.lang);
@@ -686,6 +827,29 @@ document.addEventListener('DOMContentLoaded', () => {
         modalCloseButton.addEventListener('click', hideModal);
         featureModal.addEventListener('click', (e) => {
             if (e.target === featureModal) hideModal();
+        });
+        shareModalCloseButton?.addEventListener('click', closeShareModal);
+        shareModal?.addEventListener('click', (e) => {
+            if (e.target === shareModal) closeShareModal();
+        });
+        shareForm?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (latestShareDetails) {
+                await copyShareDetails();
+                return;
+            }
+            const password = sharePassword.value.trim();
+            if (!/^\d{4,20}$/.test(password)) {
+                showWarning(translations.sharePasswordRequired[currentLang]);
+                sharePassword.focus();
+                return;
+            }
+            try {
+                await shareHtmlLink(pendingShareHtml, shareExpiration.value, password, getPreviewSize());
+            } catch (error) {
+                console.error('Failed to create share link:', error);
+                showWarning(translations.shareFailed[currentLang]);
+            }
         });
 
         modalGitHubButton.addEventListener('click', () => {

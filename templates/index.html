@@ -38,6 +38,7 @@
             <label class="setting-field">
                 <span data-translate-key="durationLabel">视频节奏</span>
                 <select id="setting-duration">
+                    <option value="preview" data-translate-key="durationPreview">快速预览</option>
                     <option value="short" data-translate-key="durationShort">短：30 秒</option>
                     <option value="medium" data-translate-key="durationMedium">标准：60 秒</option>
                     <option value="long" data-translate-key="durationLong">长：90 秒</option>
@@ -109,7 +110,7 @@
                 </form>
             </div>
         <footer class="initial-footer">
-            <span>概念 · 生成 · 影像</span>
+            <span>概念 · 生成 · 视频</span>
         </footer>
         </div>
     </div>
@@ -230,6 +231,9 @@
                     <button class="action-button save-html">
                         <span data-translate-key="saveAsHTML">保存为 HTML</span>
                     </button>
+                    <button class="action-button share-html">
+                        <span data-translate-key="shareHTMLLink">分享 HTML 链接</span>
+                    </button>
                     <button class="action-button export-video">
                         <span data-translate-key="exportAsVideo">导出为视频</span>
                     </button>
@@ -237,6 +241,61 @@
             </div>
         </div>
     </template>
+
+    <div id="share-modal" class="modal-overlay">
+        <form id="share-form" class="modal-content share-form">
+            <button id="share-modal-close-button" class="modal-close-button" type="button" title="Close">×</button>
+            <p data-translate-key="shareHTMLLink">分享 HTML 链接</p>
+            <label>
+                <span data-translate-key="shareExpirationLabel">链接有效期</span>
+                <select id="share-expiration">
+                    <option value="1h" data-translate-key="shareExpire1h">1 小时</option>
+                    <option value="3h" data-translate-key="shareExpire3h">3 小时</option>
+                    <option value="6h" data-translate-key="shareExpire6h">6 小时</option>
+                    <option value="8h" data-translate-key="shareExpire8h">8 小时</option>
+                    <option value="1d" data-translate-key="shareExpire1d">1 天</option>
+                    <option value="3d" data-translate-key="shareExpire3d">3 天</option>
+                    <option value="7d" data-translate-key="shareExpire7d">7 天</option>
+                    <option value="forever" data-translate-key="shareExpireForever">永久</option>
+                </select>
+            </label>
+            <label>
+                <span data-translate-key="sharePasswordLabel">访问密码</span>
+                <input id="share-password" type="text" inputmode="numeric" pattern="\d{4,20}" minlength="4" maxlength="20" data-translate-key="sharePasswordPlaceholder" placeholder="请输入 4-20 位数字密码" required>
+            </label>
+            <button id="share-submit-button" class="modal-button" type="submit" data-translate-key="shareCreateLink">创建并复制链接</button>
+            <div id="share-result" class="share-result" hidden>
+                <label>
+                    <span data-translate-key="shareResultUrl">链接</span>
+                    <input id="share-result-url" type="text" readonly>
+                </label>
+                <div class="share-meta">
+                    <span data-translate-key="shareResultStart">生效时间</span>
+                    <strong id="share-result-start"></strong>
+                </div>
+                <div class="share-meta">
+                    <span data-translate-key="shareResultEnd">失效时间</span>
+                    <strong id="share-result-end"></strong>
+                </div>
+                <div class="share-meta">
+                    <span data-translate-key="shareResultPassword">访问密码</span>
+                    <strong id="share-result-password"></strong>
+                </div>
+                <img id="share-qr" class="share-qr" alt="分享链接二维码">
+            </div>
+        </form>
+    </div>
+
+    <div id="preview-confirm-modal" class="modal-overlay">
+        <div class="modal-content preview-confirm-content">
+            <button id="preview-confirm-close" class="modal-close-button" type="button" title="Close">×</button>
+            <p data-translate-key="previewConfirmTitle">当前为快速预览模式，如需全量生成请选择其他 视频节奏 ，是否继续？</p>
+            <div class="preview-confirm-actions">
+                <button id="preview-confirm-cancel" class="modal-button secondary" type="button" data-translate-key="previewConfirmCancel">返回修改</button>
+                <button id="preview-confirm-continue" class="modal-button" type="button" data-translate-key="previewConfirmContinue">继续生成</button>
+            </div>
+        </div>
+    </div>
 
     <div id="feature-modal" class="modal-overlay">
         <div class="modal-content">
