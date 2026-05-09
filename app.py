@@ -35,7 +35,7 @@ BASE_URL = credentials.get("BASE_URL", "")
 MODEL = credentials.get("MODEL", "")
 ENABLE_DEBUG_OUTPUT = credentials.get("ENABLE_DEBUG_OUTPUT", True)
 MAX_CONCURRENT_GENERATION_TASKS = credentials.get("MAX_CONCURRENT_GENERATION_TASKS", 1)
-MAX_PAPER_UPLOAD_BYTES = credentials.get("MAX_PAPER_UPLOAD_BYTES", 20 * 1024 * 1024)
+MAX_PAPER_UPLOAD_BYTES = min(int(credentials.get("MAX_PAPER_UPLOAD_BYTES", 10 * 1024 * 1024)), 10 * 1024 * 1024)
 MAX_PAPER_TEXT_CHARS = credentials.get("MAX_PAPER_TEXT_CHARS", 120000)
 ACCESS_PASSPHRASES = credentials.get("ACCESS_PASSPHRASES")
 generation_semaphore = asyncio.Semaphore(MAX_CONCURRENT_GENERATION_TASKS)
@@ -364,8 +364,7 @@ def parse_settings_form(settings: str) -> Dict[str, Any]:
 
 async def extract_pdf_text(pdf_file: UploadFile) -> Dict[str, Any]:
     filename = pdf_file.filename or "paper.pdf"
-    content_type = pdf_file.content_type or ""
-    if not filename.lower().endswith(".pdf") and "pdf" not in content_type.lower():
+    if not filename.lower().endswith(".pdf"):
         raise ValueError("请上传 PDF 文件")
 
     content = await pdf_file.read()
@@ -373,6 +372,8 @@ async def extract_pdf_text(pdf_file: UploadFile) -> Dict[str, Any]:
         raise ValueError("PDF 文件为空")
     if len(content) > MAX_PAPER_UPLOAD_BYTES:
         raise ValueError(f"PDF 文件过大，请上传不超过 {MAX_PAPER_UPLOAD_BYTES // 1024 // 1024}MB 的文件")
+    if not content.startswith(b"%PDF-"):
+        raise ValueError("请上传有效的 PDF 文件")
 
     try:
         reader = PdfReader(io.BytesIO(content))

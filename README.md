@@ -212,7 +212,7 @@ docker run --rm -p 8000:8000 -v "$(pwd)/credentials.json:/app/credentials.json:r
 | `MODEL` | 否 | 空字符串 | 模型名称 |
 | `ENABLE_DEBUG_OUTPUT` | 否 | `true` | 是否打印 LLM 请求和响应调试信息 |
 | `MAX_CONCURRENT_GENERATION_TASKS` | 否 | `1` | 最大并发生成任务数 |
-| `MAX_PAPER_UPLOAD_BYTES` | 否 | `20971520` | PDF 论文最大上传体积，默认 20MB |
+| `MAX_PAPER_UPLOAD_BYTES` | 否 | `10485760` | PDF 论文最大上传体积，最大不超过 10MB |
 | `MAX_PAPER_TEXT_CHARS` | 否 | `120000` | 从论文中送入模型的最大文本字符数 |
 | `ACCESS_PASSPHRASES` | 否 | `null` | 暗号列表；为空时不启用暗号 |
 

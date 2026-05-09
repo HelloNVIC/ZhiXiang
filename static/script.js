@@ -118,6 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
         paperContinueConfig: { zh: "继续配置", en: "Continue to settings" },
         paperFileRequired: { zh: "请先上传 PDF 论文", en: "Please upload a PDF paper first" },
         paperOnlyPdf: { zh: "仅支持 PDF 文件", en: "Only PDF files are supported" },
+        paperFileTooLarge: { zh: "PDF 文件不能超过 10MB", en: "PDF files must be 10MB or smaller" },
         paperThinking: { zh: "NVIC Agent 正在阅读论文并规划动画讲解，请稍后。这可能需要数十秒至数分钟...", en: "NVIC Agent is reading the paper and planning the animation. This may take tens of seconds to minutes..." },
         paperUserMessage: { zh: "论文解释", en: "Paper explanation" },
         paperFocusPrefix: { zh: "指定内容", en: "Focus" },
@@ -208,6 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let pendingGenerationMode = 'concept';
     let pendingPaperFile = null;
     let pendingPaperFocus = '';
+    const maxPaperUploadBytes = 10 * 1024 * 1024;
     let pendingShareHtml = '';
     let latestShareDetails = null;
     let previewConfirmResolver = null;
@@ -378,7 +380,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updatePaperFileName() {
         if (!paperFileName) return;
-        paperFileName.textContent = paperFileInput?.files?.[0]?.name || '';
+        const file = paperFileInput?.files?.[0];
+        paperFileName.textContent = file?.name || '';
+        const validationMessage = validatePaperFile(file);
+        if (file && validationMessage) {
+            showWarning(validationMessage);
+            paperFileInput.value = '';
+            paperFileName.textContent = '';
+        }
     }
 
     function openPaperUploadModal() {
@@ -397,15 +406,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return Boolean(file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')));
     }
 
+    function validatePaperFile(file) {
+        if (!file) {
+            return translations.paperFileRequired[currentLang];
+        }
+        if (!isPdfFile(file)) {
+            return translations.paperOnlyPdf[currentLang];
+        }
+        if (file.size > maxPaperUploadBytes) {
+            return translations.paperFileTooLarge[currentLang];
+        }
+        return '';
+    }
+
     function handlePaperUploadSubmit(e) {
         e.preventDefault();
         const file = paperFileInput?.files?.[0];
-        if (!file) {
-            showWarning(translations.paperFileRequired[currentLang]);
-            return;
-        }
-        if (!isPdfFile(file)) {
-            showWarning(translations.paperOnlyPdf[currentLang]);
+        const validationMessage = validatePaperFile(file);
+        if (validationMessage) {
+            showWarning(validationMessage);
             return;
         }
 
