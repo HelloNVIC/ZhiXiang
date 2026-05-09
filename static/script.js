@@ -310,6 +310,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function trackUmamiEvent(eventName, data = {}) {
+        if (!window.umami || typeof window.umami.track !== 'function') return;
+
+        try {
+            window.umami.track(eventName, data);
+        } catch (error) {
+            console.warn('Failed to track Umami event:', error);
+        }
+    }
+
+    function getTextInputStats(text) {
+        const normalized = (text || '').replace(/\s+/g, ' ').trim();
+        const chineseMatches = normalized.match(/[\u3400-\u9fff]/g) || [];
+        const latinWordMatches = normalized.match(/[A-Za-z0-9_]+(?:[-'][A-Za-z0-9_]+)*/g) || [];
+
+        return {
+            length: normalized.length,
+            word_count: latinWordMatches.length + chineseMatches.length,
+            has_chinese: chineseMatches.length > 0,
+            has_latin: latinWordMatches.length > 0,
+            line_count: (text || '').split(/\r\n|\r|\n/).filter(line => line.trim()).length || 0,
+        };
+    }
+
+    function trackUserInput(text, source) {
+        trackUmamiEvent('user-input', {
+            source,
+            language: currentLang,
+            ...getTextInputStats(text),
+            ...getGenerationSettings(),
+        });
+    }
+
+    function trackPaperInput(file, focus) {
+        trackUmamiEvent('paper-input', {
+            source: 'paper',
+            language: currentLang,
+            file_type: file?.type || 'application/pdf',
+            file_size_kb: file ? Math.round(file.size / 1024) : 0,
+            has_focus: Boolean(focus),
+            focus_length: (focus || '').trim().length,
+            ...getGenerationSettings(),
+        });
+    }
+
     function handleFormSubmit(e) {
         e.preventDefault();
         const isInitial = e.currentTarget.id === 'initial-form';
@@ -607,6 +652,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             switchToChatView();
             const displayTopic = `${translations.paperUserMessage[currentLang]}：${pendingPaperFile.name}${pendingPaperFocus ? `\n${translations.paperFocusPrefix[currentLang]}：${pendingPaperFocus}` : ''}`;
+            trackPaperInput(pendingPaperFile, pendingPaperFocus);
             startPaperGeneration(pendingPaperFile, pendingPaperFocus, displayTopic);
             pendingPaperFile = null;
             pendingPaperFocus = '';
