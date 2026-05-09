@@ -91,6 +91,83 @@ def debug_response_end():
     if ENABLE_DEBUG_OUTPUT:
         print("\n===== END LLM DEBUG: conversation response =====\n", flush=True)
 
+
+class ThoughtProcessFilter:
+    START_MARKERS = (
+        "<think>",
+        "<thinking>",
+        "<reasoning>",
+        "思考过程：",
+        "思考过程:",
+    )
+    END_MARKERS = (
+        "</think>",
+        "</thinking>",
+        "</reasoning>",
+        "最终答案：",
+        "最终答案:",
+        "答案：",
+        "答案:",
+    )
+
+    def __init__(self):
+        self.buffer = ""
+        self.in_thought = False
+        self.max_start_marker_length = max(len(marker) for marker in self.START_MARKERS)
+        self.max_end_marker_length = max(len(marker) for marker in self.END_MARKERS)
+
+    @staticmethod
+    def _find_first_marker(text: str, markers: tuple[str, ...]):
+        found_index = -1
+        found_marker = None
+        lower_text = text.lower()
+        for marker in markers:
+            index = lower_text.find(marker.lower())
+            if index != -1 and (found_index == -1 or index < found_index):
+                found_index = index
+                found_marker = marker
+        return found_index, found_marker
+
+    def feed(self, text: str) -> str:
+        if not text:
+            return ""
+
+        self.buffer += text
+        visible_parts = []
+
+        while self.buffer:
+            if self.in_thought:
+                index, marker = self._find_first_marker(self.buffer, self.END_MARKERS)
+                if index == -1:
+                    self.buffer = self.buffer[-(self.max_end_marker_length - 1):]
+                    break
+                self.buffer = self.buffer[index + len(marker):]
+                self.in_thought = False
+                continue
+
+            index, marker = self._find_first_marker(self.buffer, self.START_MARKERS)
+            if index == -1:
+                keep_length = self.max_start_marker_length - 1
+                if len(self.buffer) <= keep_length:
+                    break
+                visible_parts.append(self.buffer[:-keep_length])
+                self.buffer = self.buffer[-keep_length:]
+                break
+
+            visible_parts.append(self.buffer[:index])
+            self.buffer = self.buffer[index + len(marker):]
+            self.in_thought = True
+
+        return "".join(visible_parts)
+
+    def flush(self) -> str:
+        if self.in_thought:
+            self.buffer = ""
+            return ""
+        visible = self.buffer
+        self.buffer = ""
+        return visible
+
 if API_KEY.startswith("sk-"):
     # 为 OpenRouter 添加应用标识
     extra_headers = {}    
@@ -240,6 +317,7 @@ html+css+js+svg，放进一个html里，直接只给出html，不用其它总结
         return
 
     debug_response_start("openai-compatible")
+    thought_filter = ThoughtProcessFilter()
     async for chunk in response:
         # 某些 OpenAI-compatible / OpenRouter 流式块可能没有 choices 或没有 content
         choices = getattr(chunk, "choices", None)
@@ -255,10 +333,20 @@ html+css+js+svg，放进一个html里，直接只给出html，不用其它总结
         if not token:
             continue
 
-        debug_response_chunk(token)
-        payload = json.dumps({"token": token}, ensure_ascii=False)
+        visible_token = thought_filter.feed(token)
+        if not visible_token:
+            continue
+
+        debug_response_chunk(visible_token)
+        payload = json.dumps({"token": visible_token}, ensure_ascii=False)
         yield f"data: {payload}\n\n"
         await asyncio.sleep(0.001)
+
+    remaining_token = thought_filter.flush()
+    if remaining_token:
+        debug_response_chunk(remaining_token)
+        payload = json.dumps({"token": remaining_token}, ensure_ascii=False)
+        yield f"data: {payload}\n\n"
 
     debug_response_end()
 
@@ -377,6 +465,7 @@ async def paper_llm_event_stream(
         return
 
     debug_response_start("openai-compatible")
+    thought_filter = ThoughtProcessFilter()
     async for chunk in response:
         choices = getattr(chunk, "choices", None)
         if not choices:
@@ -391,10 +480,20 @@ async def paper_llm_event_stream(
         if not token:
             continue
 
-        debug_response_chunk(token)
-        payload = json.dumps({"token": token}, ensure_ascii=False)
+        visible_token = thought_filter.feed(token)
+        if not visible_token:
+            continue
+
+        debug_response_chunk(visible_token)
+        payload = json.dumps({"token": visible_token}, ensure_ascii=False)
         yield f"data: {payload}\n\n"
         await asyncio.sleep(0.001)
+
+    remaining_token = thought_filter.flush()
+    if remaining_token:
+        debug_response_chunk(remaining_token)
+        payload = json.dumps({"token": remaining_token}, ensure_ascii=False)
+        yield f"data: {payload}\n\n"
 
     debug_response_end()
     debug_llm("paper stream complete", "[DONE]")
