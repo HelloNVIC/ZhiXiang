@@ -89,7 +89,7 @@ http://127.0.0.1:8000
 ### 1. 克隆项目
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/HelloNVIC/ZhiXiang.git
 cd ZhiXiang
 ```
 
