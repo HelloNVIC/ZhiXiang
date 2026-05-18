@@ -248,9 +248,11 @@ button:disabled {
 .output-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding: 18px 20px; border-bottom: 1px solid #000; }
 .output-header h3, .retry-card h3 { margin: 0; font-family: var(--font-display); font-size: 1.35rem; letter-spacing: -0.04em; }
 .output-status { color: #000; border: 1px solid #000; border-radius: 0; padding: 7px 10px; font-size: 0.72rem; font-weight: 800; white-space: nowrap; }
+.output-header .model-name { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); background: var(--surface-muted); border: 1px solid #ddd; padding: 4px 10px; white-space: nowrap; letter-spacing: 0.02em; }
 .output-card.is-streaming .output-status::after { content: ""; display: inline-block; width: 0.45em; height: 0.45em; margin-left: 0.5em; border-radius: 999px; background: #000; animation: pulseDot 1s infinite; }
 .raw-output { margin: 0; padding: 20px; max-height: 34vh; overflow: auto; background: #fff; color: #000; font-family: var(--font-sans); font-size: 0.86rem; line-height: 1.75; white-space: pre-wrap; word-break: break-word; }
 .raw-output code span { display: inline; animation: tokenFadeIn 0.2s forwards; opacity: 0; }
+.raw-output code span.thought-token { color: #777; background: #f4f4f4; font-style: italic; }
 .retry-card { padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 18px; background: #fff; }
 .retry-card span { display: block; margin-top: 8px; color: #333; line-height: 1.6; }
 .retry-generation { min-height: 46px; padding: 0 18px; border: 1px solid #000; border-radius: 0; background: #000; color: #fff; font-weight: 900; cursor: pointer; white-space: nowrap; }

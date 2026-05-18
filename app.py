@@ -25,19 +25,110 @@ try:
 except ModuleNotFoundError:
     from google import genai
 # -----------------------------------------------------------------------
-# 0. 配置
+# 0. 配置 (支持热更新)
 # -----------------------------------------------------------------------
 shanghai_tz = pytz.timezone("Asia/Shanghai")
 
-credentials = json.load(open("credentials.json"))
-API_KEY = credentials["API_KEY"]
-BASE_URL = credentials.get("BASE_URL", "")
-MODEL = credentials.get("MODEL", "")
-ENABLE_DEBUG_OUTPUT = credentials.get("ENABLE_DEBUG_OUTPUT", True)
-MAX_CONCURRENT_GENERATION_TASKS = credentials.get("MAX_CONCURRENT_GENERATION_TASKS", 1)
-MAX_PAPER_UPLOAD_BYTES = min(int(credentials.get("MAX_PAPER_UPLOAD_BYTES", 10 * 1024 * 1024)), 10 * 1024 * 1024)
-MAX_PAPER_TEXT_CHARS = credentials.get("MAX_PAPER_TEXT_CHARS", 120000)
-ACCESS_PASSPHRASES = credentials.get("ACCESS_PASSPHRASES")
+
+class ConfigManager:
+    """支持热更新的配置管理器，基于文件 mtime 检查。"""
+
+    def __init__(self, path: str = "credentials.json"):
+        self.path = path
+        self._config: Dict[str, Any] = {}
+        self._mtime = 0.0
+        self._clients: Dict[str, AsyncOpenAI] = {}
+        self.reload(force=True)
+
+    def reload(self, force: bool = False) -> bool:
+        try:
+            mtime = os.path.getmtime(self.path)
+        except OSError:
+            return False
+        if not force and mtime == self._mtime:
+            return False
+        try:
+            with open(self.path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return False
+        self._config = config
+        self._mtime = mtime
+        models = config.get("MODELS")
+        if isinstance(models, list) and models:
+            models_info = [m.get("name", m.get("model_id", "?")) for m in sorted(models, key=lambda m: m.get("priority", 0))]
+        elif config.get("MODEL"):
+            models_info = [config.get("MODEL")]
+        else:
+            models_info = []
+        print(f"[ConfigManager] 配置已{'初始加载' if force else '热更新'}: "
+              f"模型列表={models_info}, "
+              f"ENABLE_DEBUG_OUTPUT={config.get('ENABLE_DEBUG_OUTPUT', True)}, "
+              f"MAX_CONCURRENT={config.get('MAX_CONCURRENT_GENERATION_TASKS', 1)}, "
+              f"ACCESS_PASSPHRASES={'已配置' if config.get('ACCESS_PASSPHRASES') else '未配置'}",
+              flush=True)
+        return True
+
+    def get(self, key: str, default=None):
+        self.reload()
+        return self._config.get(key, default)
+
+    def get_models(self) -> List[Dict[str, Any]]:
+        """返回按 priority 排序的模型列表，兼容旧配置（单 MODEL）。"""
+        self.reload()
+        models = self._config.get("MODELS")
+        if isinstance(models, list) and models:
+            return sorted(models, key=lambda m: m.get("priority", 0))
+        single_model = self._config.get("MODEL", "")
+        if single_model:
+            return [{
+                "name": single_model,
+                "model_id": single_model,
+                "api_key": self._config.get("API_KEY", ""),
+                "base_url": self._config.get("BASE_URL", ""),
+                "priority": 0,
+            }]
+        return []
+
+    def get_client(self, api_key: Optional[str] = None, base_url: Optional[str] = None) -> AsyncOpenAI:
+        self.reload()
+        if api_key is None:
+            api_key = self._config.get("API_KEY", "")
+        if base_url is None:
+            base_url = self._config.get("BASE_URL", "")
+        cache_key = f"{api_key}:{base_url}"
+        if cache_key not in self._clients:
+            kwargs = {"api_key": api_key}
+            if base_url:
+                kwargs["base_url"] = base_url
+            self._clients[cache_key] = AsyncOpenAI(**kwargs)
+        return self._clients[cache_key]
+
+    @property
+    def enable_debug(self) -> bool:
+        return bool(self.get("ENABLE_DEBUG_OUTPUT", True))
+
+    @property
+    def access_passphrases(self) -> Optional[List[str]]:
+        return self.get("ACCESS_PASSPHRASES")
+
+    @property
+    def max_paper_upload_bytes(self) -> int:
+        return min(int(self.get("MAX_PAPER_UPLOAD_BYTES", 10 * 1024 * 1024)), 10 * 1024 * 1024)
+
+    @property
+    def max_paper_text_chars(self) -> int:
+        return int(self.get("MAX_PAPER_TEXT_CHARS", 120000))
+
+
+config_manager = ConfigManager("credentials.json")
+
+# 启动时检查 API_KEY
+_initial_api_key = config_manager.get("API_KEY", "")
+if _initial_api_key.startswith("sk-REPLACE_ME"):
+    raise RuntimeError("请在 credentials.json 里配置 API_KEY")
+
+MAX_CONCURRENT_GENERATION_TASKS = config_manager.get("MAX_CONCURRENT_GENERATION_TASKS", 1)
 generation_semaphore = asyncio.Semaphore(MAX_CONCURRENT_GENERATION_TASKS)
 shared_html_links = {}
 SHARE_STORAGE_DIR = os.path.join(os.path.dirname(__file__), "shared_html")
@@ -57,7 +148,7 @@ SHARE_EXPIRATION_SECONDS = {
 
 
 def debug_llm(label: str, value=None):
-    if not ENABLE_DEBUG_OUTPUT:
+    if not config_manager.enable_debug:
         return
     print(f"\n===== LLM DEBUG: {label} =====", flush=True)
     if value is not None:
@@ -82,39 +173,60 @@ def debug_response_start(provider: str):
 
 
 def debug_response_chunk(chunk: str):
-    if not ENABLE_DEBUG_OUTPUT or not chunk:
+    if not config_manager.enable_debug or not chunk:
         return
     print(chunk, end="", flush=True)
 
 
 def debug_response_end():
-    if ENABLE_DEBUG_OUTPUT:
+    if config_manager.enable_debug:
         print("\n===== END LLM DEBUG: conversation response =====\n", flush=True)
 
 
 class ThoughtProcessFilter:
-    START_MARKERS = (
+    DEFAULT_START_MARKERS = (
         "<think>",
         "<thinking>",
+        "<thought>",
         "<reasoning>",
+        "<analysis>",
         "思考过程：",
         "思考过程:",
+        "Thinking process:",
+        "Thinking process：",
     )
-    END_MARKERS = (
+    DEFAULT_END_MARKERS = (
         "</think>",
         "</thinking>",
+        "</thought>",
         "</reasoning>",
+        "</analysis>",
         "最终答案：",
         "最终答案:",
         "答案：",
         "答案:",
+        "Final answer:",
+        "Final answer：",
     )
 
-    def __init__(self):
+    def __init__(self, start_markers=None, end_markers=None):
+        self.start_markers = start_markers or self.DEFAULT_START_MARKERS
+        self.end_markers = end_markers or self.DEFAULT_END_MARKERS
         self.buffer = ""
         self.in_thought = False
-        self.max_start_marker_length = max(len(marker) for marker in self.START_MARKERS)
-        self.max_end_marker_length = max(len(marker) for marker in self.END_MARKERS)
+        self.max_start_marker_length = max(len(m) for m in self.start_markers) if self.start_markers else 0
+        self.max_end_marker_length = max(len(m) for m in self.end_markers) if self.end_markers else 0
+
+    @staticmethod
+    def from_config(thought_markers: Optional[Dict[str, Any]]) -> "ThoughtProcessFilter":
+        if not thought_markers:
+            return ThoughtProcessFilter()
+        start = thought_markers.get("start")
+        end = thought_markers.get("end")
+        return ThoughtProcessFilter(
+            start_markers=tuple(start) if start else None,
+            end_markers=tuple(end) if end else None,
+        )
 
     @staticmethod
     def _find_first_marker(text: str, markers: tuple[str, ...]):
@@ -137,7 +249,7 @@ class ThoughtProcessFilter:
 
         while self.buffer:
             if self.in_thought:
-                index, marker = self._find_first_marker(self.buffer, self.END_MARKERS)
+                index, marker = self._find_first_marker(self.buffer, self.end_markers)
                 if index == -1:
                     self.buffer = self.buffer[-(self.max_end_marker_length - 1):]
                     break
@@ -145,7 +257,7 @@ class ThoughtProcessFilter:
                 self.in_thought = False
                 continue
 
-            index, marker = self._find_first_marker(self.buffer, self.START_MARKERS)
+            index, marker = self._find_first_marker(self.buffer, self.start_markers)
             if index == -1:
                 keep_length = self.max_start_marker_length - 1
                 if len(self.buffer) <= keep_length:
@@ -168,16 +280,6 @@ class ThoughtProcessFilter:
         self.buffer = ""
         return visible
 
-if API_KEY.startswith("sk-"):
-    # 为 OpenRouter 添加应用标识
-    extra_headers = {}    
-    client = AsyncOpenAI(
-        api_key=API_KEY, 
-        base_url=BASE_URL,
-    )
-
-if API_KEY.startswith("sk-REPLACE_ME"):
-    raise RuntimeError("请在环境变量里配置 API_KEY")
 
 templates = Jinja2Templates(directory="templates")
 
@@ -254,31 +356,65 @@ def build_generation_setting_instructions(settings: Optional[Dict[str, Any]] = N
 
 
 # -----------------------------------------------------------------------
-# 2. 核心：流式生成器 (现在会使用 history)
+# 2. 核心：流式生成器 (支持多模型自动切换)
 # -----------------------------------------------------------------------
+async def _stream_response(response, thought_filter: ThoughtProcessFilter = None) -> AsyncGenerator[str, None]:
+    if thought_filter is None:
+        thought_filter = ThoughtProcessFilter()
+    async for chunk in response:
+        choices = getattr(chunk, "choices", None)
+        if not choices:
+            continue
+
+        choice = choices[0]
+        delta = getattr(choice, "delta", None)
+        if not delta:
+            continue
+
+        # reasoning_content 字段（如 DeepSeek）
+        reasoning = getattr(delta, "reasoning_content", None)
+        if reasoning:
+            debug_response_chunk(f"[thought] {reasoning}")
+            payload = json.dumps({"token": reasoning, "isThought": True}, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(0.001)
+
+        token = getattr(delta, "content", None) or ""
+        if not token:
+            continue
+
+        # content 中包含 <thinking> 等标记时，也识别为思考过程
+        visible_token = thought_filter.feed(token)
+        if not visible_token:
+            # 被 filter 吃掉的是思考内容，也发送给前端
+            thought_content = token
+            debug_response_chunk(f"[thought-filtered] {thought_content}")
+            payload = json.dumps({"token": thought_content, "isThought": True}, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(0.001)
+            continue
+
+        debug_response_chunk(visible_token)
+        payload = json.dumps({"token": visible_token}, ensure_ascii=False)
+        yield f"data: {payload}\n\n"
+        await asyncio.sleep(0.001)
+
+    remaining_token = thought_filter.flush()
+    if remaining_token:
+        debug_response_chunk(remaining_token)
+        payload = json.dumps({"token": remaining_token}, ensure_ascii=False)
+        yield f"data: {payload}\n\n"
+
+
 async def llm_event_stream(
     topic: str,
     history: Optional[List[dict]] = None,
-    model: str = None, # Will use MODEL from config if not specified
     settings: Optional[Dict[str, Any]] = None,
 ) -> AsyncGenerator[str, None]:
     history = history or []
     settings = settings or {}
     setting_instructions = build_generation_setting_instructions(settings)
 
-    # Use configured model if not specified
-    if model is None:
-        model = MODEL
-
-    debug_llm("request received", {
-        "provider": "openai-compatible",
-        "model": model,
-        "topic": topic,
-        "history": history,
-        "settings": settings,
-    })
-
-    # The system prompt is now more focused
     system_prompt = f"""请你生成一个非常精美的动态动画,讲讲 {topic}
 要动态的,要像一个完整的,正在播放的视频。包含一个完整的过程，能把知识点讲清楚。
 页面极为精美，好看，有设计感，同时能够很好的传达知识。知识和图像要准确
@@ -302,56 +438,79 @@ html+css+js+svg，放进一个html里，直接只给出html，不用其它总结
         {"role": "user", "content": topic},
     ]
 
-    debug_conversation("openai-compatible", model, messages, settings)
+    models = config_manager.get_models()
+    last_error = None
 
-    try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-            stream=True,
-            temperature=0.8, 
+    for i, model_cfg in enumerate(models):
+        model_name = model_cfg.get("name", model_cfg.get("model_id", "unknown"))
+        model_id = model_cfg.get("model_id", model_cfg.get("name", ""))
+
+        yield f'data: {json.dumps({"event": "model_info", "model_name": model_name}, ensure_ascii=False)}\n\n'
+
+        client = config_manager.get_client(
+            model_cfg.get("api_key"),
+            model_cfg.get("base_url"),
         )
-    except OpenAIError as e:
-        debug_llm("openai-compatible error", str(e))
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        thought_filter = ThoughtProcessFilter.from_config(model_cfg.get("thought_markers"))
+
+        debug_llm("request received", {
+            "provider": "openai-compatible",
+            "model": model_name,
+            "model_id": model_id,
+            "topic": topic,
+            "history": history,
+            "settings": settings,
+        })
+        debug_conversation("openai-compatible", model_name, messages, settings)
+
+        try:
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=model_id,
+                    messages=messages,
+                    stream=True,
+                    temperature=0.8,
+                ),
+                timeout=60,
+            )
+        except Exception as e:
+            last_error = e
+            if isinstance(e, asyncio.TimeoutError):
+                reason = "模型响应超过 60 秒，已自动切换"
+            elif isinstance(e, OpenAIError):
+                reason = str(e)
+            else:
+                reason = f"网络或连接错误: {type(e).__name__}: {e}"
+            debug_llm(f"model {model_name} create() failed", reason)
+            if i < len(models) - 1:
+                next_name = models[i + 1].get("name", models[i + 1].get("model_id", "unknown"))
+                yield f'data: {json.dumps({"event": "model_switch", "from": model_name, "to": next_name, "reason": reason}, ensure_ascii=False)}\n\n'
+                continue
+            else:
+                break
+
+        debug_response_start("openai-compatible")
+        try:
+            async for chunk in _stream_response(response, thought_filter):
+                yield chunk
+        except Exception as e:
+            last_error = e
+            debug_llm(f"model {model_name} stream failed", str(e))
+            if i < len(models) - 1:
+                next_name = models[i + 1].get("name", models[i + 1].get("model_id", "unknown"))
+                yield f'data: {json.dumps({"event": "model_switch", "from": model_name, "to": next_name, "reason": str(e)}, ensure_ascii=False)}\n\n'
+                continue
+            else:
+                break
+
+        debug_response_end()
+        debug_llm("stream complete", "[DONE]")
+        yield 'data: {"event":"[DONE]"}\n\n'
         return
 
-    debug_response_start("openai-compatible")
-    thought_filter = ThoughtProcessFilter()
-    async for chunk in response:
-        # 某些 OpenAI-compatible / OpenRouter 流式块可能没有 choices 或没有 content
-        choices = getattr(chunk, "choices", None)
-        if not choices:
-            continue
-
-        choice = choices[0]
-        delta = getattr(choice, "delta", None)
-        if not delta:
-            continue
-
-        token = getattr(delta, "content", None) or ""
-        if not token:
-            continue
-
-        visible_token = thought_filter.feed(token)
-        if not visible_token:
-            continue
-
-        debug_response_chunk(visible_token)
-        payload = json.dumps({"token": visible_token}, ensure_ascii=False)
-        yield f"data: {payload}\n\n"
-        await asyncio.sleep(0.001)
-
-    remaining_token = thought_filter.flush()
-    if remaining_token:
-        debug_response_chunk(remaining_token)
-        payload = json.dumps({"token": remaining_token}, ensure_ascii=False)
-        yield f"data: {payload}\n\n"
-
-    debug_response_end()
-
-    debug_llm("stream complete", "[DONE]")
-    yield 'data: {"event":"[DONE]"}\n\n'
+    # 所有模型均失败
+    debug_llm("all models failed", str(last_error))
+    yield f"data: {json.dumps({'error': f'所有模型均不可用，最后一个错误: {last_error}'}, ensure_ascii=False)}\n\n"
 
 
 def parse_settings_form(settings: str) -> Dict[str, Any]:
@@ -370,8 +529,9 @@ async def extract_pdf_text(pdf_file: UploadFile) -> Dict[str, Any]:
     content = await pdf_file.read()
     if not content:
         raise ValueError("PDF 文件为空")
-    if len(content) > MAX_PAPER_UPLOAD_BYTES:
-        raise ValueError(f"PDF 文件过大，请上传不超过 {MAX_PAPER_UPLOAD_BYTES // 1024 // 1024}MB 的文件")
+    if len(content) > config_manager.max_paper_upload_bytes:
+        max_mb = config_manager.max_paper_upload_bytes // 1024 // 1024
+        raise ValueError(f"PDF 文件过大，请上传不超过 {max_mb}MB 的文件")
     if not content.startswith(b"%PDF-"):
         raise ValueError("请上传有效的 PDF 文件")
 
@@ -391,9 +551,9 @@ async def extract_pdf_text(pdf_file: UploadFile) -> Dict[str, Any]:
     if not paper_text:
         raise ValueError("未能从 PDF 中提取文字，暂不支持扫描版或图片型论文")
 
-    truncated = len(paper_text) > MAX_PAPER_TEXT_CHARS
+    truncated = len(paper_text) > config_manager.max_paper_text_chars
     if truncated:
-        paper_text = paper_text[:MAX_PAPER_TEXT_CHARS]
+        paper_text = paper_text[:config_manager.max_paper_text_chars]
 
     return {
         "filename": filename,
@@ -407,14 +567,11 @@ async def paper_llm_event_stream(
     paper_text: str,
     filename: str,
     focus: str = "",
-    model: str = None,
     settings: Optional[Dict[str, Any]] = None,
     truncated: bool = False,
 ) -> AsyncGenerator[str, None]:
     settings = settings or {}
     setting_instructions = build_generation_setting_instructions(settings)
-    if model is None:
-        model = MODEL
 
     focus_instruction = (
         f"用户指定重点：{focus}。请围绕该章节或概念展开，但必须结合整篇论文上下文说明其动机、方法和意义。"
@@ -451,66 +608,83 @@ async def paper_llm_event_stream(
         {"role": "user", "content": f"论文文件名：{filename}\n\n论文内容：\n{paper_text}"},
     ]
 
-    debug_conversation("openai-compatible", model, messages, settings)
+    models = config_manager.get_models()
+    last_error = None
 
-    try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-            stream=True,
-            temperature=0.8,
+    for i, model_cfg in enumerate(models):
+        model_name = model_cfg.get("name", model_cfg.get("model_id", "unknown"))
+        model_id = model_cfg.get("model_id", model_cfg.get("name", ""))
+
+        yield f'data: {json.dumps({"event": "model_info", "model_name": model_name}, ensure_ascii=False)}\n\n'
+
+        client = config_manager.get_client(
+            model_cfg.get("api_key"),
+            model_cfg.get("base_url"),
         )
-    except OpenAIError as e:
-        debug_llm("openai-compatible error", str(e))
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        thought_filter = ThoughtProcessFilter.from_config(model_cfg.get("thought_markers"))
+
+        debug_conversation("openai-compatible", model_name, messages, settings)
+
+        try:
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=model_id,
+                    messages=messages,
+                    stream=True,
+                    temperature=0.8,
+                ),
+                timeout=60,
+            )
+        except Exception as e:
+            last_error = e
+            if isinstance(e, asyncio.TimeoutError):
+                reason = "模型响应超过 60 秒，已自动切换"
+            elif isinstance(e, OpenAIError):
+                reason = str(e)
+            else:
+                reason = f"网络或连接错误: {type(e).__name__}: {e}"
+            debug_llm(f"paper model {model_name} create() failed", reason)
+            if i < len(models) - 1:
+                next_name = models[i + 1].get("name", models[i + 1].get("model_id", "unknown"))
+                yield f'data: {json.dumps({"event": "model_switch", "from": model_name, "to": next_name, "reason": reason}, ensure_ascii=False)}\n\n'
+                continue
+            else:
+                break
+
+        debug_response_start("openai-compatible")
+        try:
+            async for chunk in _stream_response(response, thought_filter):
+                yield chunk
+        except Exception as e:
+            last_error = e
+            debug_llm(f"paper model {model_name} stream failed", str(e))
+            if i < len(models) - 1:
+                next_name = models[i + 1].get("name", models[i + 1].get("model_id", "unknown"))
+                yield f'data: {json.dumps({"event": "model_switch", "from": model_name, "to": next_name, "reason": str(e)}, ensure_ascii=False)}\n\n'
+                continue
+            else:
+                break
+
+        debug_response_end()
+        debug_llm("paper stream complete", "[DONE]")
+        yield 'data: {"event":"[DONE]"}\n\n'
         return
 
-    debug_response_start("openai-compatible")
-    thought_filter = ThoughtProcessFilter()
-    async for chunk in response:
-        choices = getattr(chunk, "choices", None)
-        if not choices:
-            continue
-
-        choice = choices[0]
-        delta = getattr(choice, "delta", None)
-        if not delta:
-            continue
-
-        token = getattr(delta, "content", None) or ""
-        if not token:
-            continue
-
-        visible_token = thought_filter.feed(token)
-        if not visible_token:
-            continue
-
-        debug_response_chunk(visible_token)
-        payload = json.dumps({"token": visible_token}, ensure_ascii=False)
-        yield f"data: {payload}\n\n"
-        await asyncio.sleep(0.001)
-
-    remaining_token = thought_filter.flush()
-    if remaining_token:
-        debug_response_chunk(remaining_token)
-        payload = json.dumps({"token": remaining_token}, ensure_ascii=False)
-        yield f"data: {payload}\n\n"
-
-    debug_response_end()
-    debug_llm("paper stream complete", "[DONE]")
-    yield 'data: {"event":"[DONE]"}\n\n'
+    debug_llm("all paper models failed", str(last_error))
+    yield f"data: {json.dumps({'error': f'所有模型均不可用，最后一个错误: {last_error}'}, ensure_ascii=False)}\n\n"
 
 # -----------------------------------------------------------------------
 # 3. 路由 (CHANGED: Now a POST request)
 # -----------------------------------------------------------------------
 @app.get("/config")
 async def get_public_config():
-    return {"requiresPassphrase": bool(ACCESS_PASSPHRASES)}
+    return {"requiresPassphrase": bool(config_manager.access_passphrases)}
 
 
 @app.post("/verify-passphrase")
 async def verify_passphrase(passphrase_request: PassphraseRequest):
-    if ACCESS_PASSPHRASES and passphrase_request.passphrase not in ACCESS_PASSPHRASES:
+    access_passphrases = config_manager.access_passphrases
+    if access_passphrases and passphrase_request.passphrase not in access_passphrases:
         raise HTTPException(status_code=403, detail="暗号错误")
     return {"ok": True}
 

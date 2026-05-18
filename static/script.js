@@ -443,6 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let buffer = '';
         let fullResponse = '';
         let queueWarningVisible = false;
+        const modelNameElement = outputElement?.querySelector('.model-name');
 
         while (true) {
             const { done, value } = await reader.read();
@@ -491,6 +492,36 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw new LLMParseError('Invalid response format from server.');
                 }
 
+                if (data.event === 'model_info') {
+                    if (modelNameElement && data.model_name) {
+                        modelNameElement.textContent = data.model_name;
+                        modelNameElement.hidden = false;
+                    }
+                    continue;
+                }
+
+                if (data.event === 'model_switch') {
+                    console.warn(`Model switched from ${data.from} to ${data.to}: ${data.reason}`);
+                    if (modelNameElement && data.to) {
+                        modelNameElement.textContent = data.to;
+                        modelNameElement.hidden = false;
+                    }
+                    const mainMsg = `由于网络波动，NVIC Agent已从 ${data.from} 切换至 ${data.to}`;
+                    const detailMsg = data.reason || '';
+                    const confirmBtn = document.createElement('button');
+                    confirmBtn.textContent = 'OK';
+                    confirmBtn.style.cssText = 'margin-left:12px;padding:8px 20px;border:1px solid #000;background:#000;color:#fff;font-weight:700;cursor:pointer;font-size:14px;';
+                    showWarning(mainMsg, {
+                        description: detailMsg,
+                        persistent: true,
+                        blocking: true,
+                        customActions: [confirmBtn]
+                    });
+                    confirmBtn.addEventListener('click', () => {
+                        forceHideWarning();
+                    });
+                }
+
                 if (data.event === 'queued') {
                     queueWarningVisible = true;
                     showWarning(translations.generationQueued[currentLang], {
@@ -515,9 +546,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.error) throw new LLMParseError(data.error);
 
                 const token = data.token || '';
+                const isThought = Boolean(data.isThought);
                 if (agentThinkingMessage) agentThinkingMessage.remove();
-                fullResponse += token;
-                updateOutputBlock(outputElement, token);
+                if (isThought) {
+                    updateOutputBlock(outputElement, token, true);
+                } else {
+                    fullResponse += token;
+                    updateOutputBlock(outputElement, token, false);
+                }
             }
         }
     }
@@ -734,11 +770,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const appendOutputBlock = () => appendFromTemplate(templates.output);
 
-    function updateOutputBlock(outputElement, text) {
+    function updateOutputBlock(outputElement, text, isThought = false) {
         const codeElement = outputElement.querySelector('code');
         if (!text || !codeElement) return;
         const span = document.createElement('span');
         span.textContent = text;
+        if (isThought) span.classList.add('thought-token');
         codeElement.appendChild(span);
 
         const rawOutput = outputElement.querySelector('.raw-output');
@@ -756,9 +793,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function extractHtmlFromResponse(responseText) {
-        const fencedMatch = responseText.match(/```(?:html)?\s*([\s\S]*?)```/i);
-        const candidate = fencedMatch ? fencedMatch[1] : responseText;
-        const htmlMatch = candidate.match(/<!doctype html[\s\S]*|<html[\s\S]*<\/html>/i);
+        const fencedMatch = responseText.match(/```(?:html|HTML)?\s*([\s\S]*?)```/i)
+            || responseText.match(/```[\w-]*\s*([\s\S]*?)```/i);
+        let candidate = fencedMatch ? fencedMatch[1] : responseText;
+        candidate = candidate
+            .replace(/^\s*(?:以下是|这是|Here is|Sure,? here is)[\s\S]*?(?=<!doctype html|<html)/i, '')
+            .replace(/\s*(?:以上|希望).*$/i, '');
+        const htmlMatch = candidate.match(/<!doctype html[\s\S]*?<\/html>/i)
+            || candidate.match(/<html[\s\S]*?<\/html>/i)
+            || candidate.match(/<body[\s\S]*?<\/body>/i);
         return (htmlMatch ? htmlMatch[0] : candidate).trim();
     }
 
@@ -1094,6 +1137,14 @@ function showWarning(message, options = {}) {
         cancelButton.textContent = options.cancelText || '取消任务';
         cancelButton.hidden = !options.cancelable;
     }
+    box.querySelectorAll('.custom-warning-action').forEach(element => element.remove());
+    if (options.customActions?.length) {
+        const actions = box.querySelector('.warning-actions');
+        options.customActions.forEach(action => {
+            action.classList.add('custom-warning-action');
+            actions?.prepend(action);
+        });
+    }
     if (description) {
         description.textContent = options.description || '';
         description.hidden = !options.description;
@@ -1130,6 +1181,7 @@ function forceHideWarning() {
     const description = document.getElementById('warning-description');
     const closeButton = document.getElementById('warning-close-button');
     const cancelButton = document.getElementById('queue-cancel-button');
+    box?.querySelectorAll('.custom-warning-action').forEach(element => element.remove());
     box?.classList.remove('is-blocking', 'has-description');
     if (spinner) spinner.hidden = true;
     if (description) {

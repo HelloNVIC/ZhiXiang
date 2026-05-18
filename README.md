@@ -61,6 +61,9 @@
 | 自动渲染 | 自动提取模型返回的 HTML，并放入 sandbox iframe 播放 |
 | 多轮修改 | 生成后可继续输入修改意见，基于历史上下文迭代 |
 | 专业生成配置 | 支持风格、节奏、比例、分辨率、讲解深度、字幕和 MathJax |
+| 多模型自动切换 | 配置多个模型按优先级尝试，API 错误或超时自动切换备用模型 |
+| 模型思考过程展示 | 兼容 DeepSeek 等思考模型的 reasoning_content 输出，前端实时显示 |
+| 配置热更新 | 修改 credentials.json 后自动生效，无需重启服务 |
 | 分享链接 | 可创建带密码和过期时间的 HTML 分享链接 |
 | 访问控制 | 支持暗号入口，适合本地演示或小范围分享 |
 | Docker 部署 | 内置 Dockerfile 与 docker-compose.yml |
@@ -113,14 +116,31 @@ cp example.json credentials.json
 
 ```json
 {
-    "API_KEY": "",
-    "BASE_URL": "",
-    "MODEL": "",
+    "MODELS": [
+        {
+            "name": "GLM-5.1",
+            "model_id": "GLM-5.1",
+            "api_key": "sk-...",
+            "base_url": "https://api.example.com/v1/",
+            "priority": 1
+        },
+        {
+            "name": "MiniMax-M2.7",
+            "model_id": "MiniMax-M2.7",
+            "api_key": "sk-...",
+            "base_url": "https://api.example.com/v1/",
+            "priority": 2
+        }
+    ],
     "ENABLE_DEBUG_OUTPUT": false,
     "MAX_CONCURRENT_GENERATION_TASKS": 1,
     "ACCESS_PASSPHRASES": ["NVIC"]
 }
 ```
+
+`MODELS` 会按 `priority` 从小到大依次尝试。模型请求超时、网络异常或 API 返回错误时，后端会自动切换到下一个模型，并在前端提示用户。
+
+修改 `credentials.json` 会热更新生效，无需重启服务。
 
 如果不需要暗号访问，把 `ACCESS_PASSPHRASES` 设置为空数组：
 
@@ -207,10 +227,14 @@ docker run --rm -p 8000:8000 -v "$(pwd)/credentials.json:/app/credentials.json:r
 
 | 字段 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `API_KEY` | 是 | 无 | 大模型 API Key |
-| `BASE_URL` | 否 | 空字符串 | OpenAI 兼容接口地址 |
-| `MODEL` | 否 | 空字符串 | 模型名称 |
-| `ENABLE_DEBUG_OUTPUT` | 否 | `true` | 是否打印 LLM 请求和响应调试信息 |
+| `MODELS` | 是 | 无 | 多模型配置数组，按 `priority` 从小到大依次尝试 |
+| `MODELS[].name` | 是 | 无 | 前端显示的模型名称 |
+| `MODELS[].model_id` | 是 | 无 | 发送给 OpenAI 兼容接口的模型 ID |
+| `MODELS[].api_key` | 是 | 无 | 当前模型使用的大模型 API Key |
+| `MODELS[].base_url` | 否 | 空字符串 | 当前模型使用的 OpenAI 兼容接口地址 |
+| `MODELS[].priority` | 否 | `0` | 模型优先级，数字越小越优先 |
+| `MODELS[].thought_markers` | 否 | 内置标记 | 自定义思考过程开始/结束标记，例如 `<think>` |
+| `ENABLE_DEBUG_OUTPUT` | 否 | `true` | 是否打印 LLM 请求、响应和配置热更新调试信息 |
 | `MAX_CONCURRENT_GENERATION_TASKS` | 否 | `1` | 最大并发生成任务数 |
 | `MAX_PAPER_UPLOAD_BYTES` | 否 | `10485760` | PDF 论文最大上传体积，最大不超过 10MB |
 | `MAX_PAPER_TEXT_CHARS` | 否 | `120000` | 从论文中送入模型的最大文本字符数 |
@@ -219,6 +243,10 @@ docker run --rm -p 8000:8000 -v "$(pwd)/credentials.json:/app/credentials.json:r
 补充说明：
 
 - 后端使用 OpenAI 兼容客户端调用模型。
+- `credentials.json` 支持热更新；模型列表、调试开关、访问暗号等会在下次请求时重新读取。
+- 多模型调用会在 60 秒超时、网络异常、API 错误返回或流式中断时自动切换。
+- 前端会显示当前使用的模型名称；模型切换时会提示“由于网络波动，NVIC Agent已从 xxx 切换至 xxx”，并在小字中展示具体错误。
+- 思考模型的 `reasoning_content` 或 `<think>` 类标记内容会在前端流式展示，但不会参与最终 HTML 动画解析。
 - 论文解释使用 `pypdf` 提取 PDF 文本。
 - 如果论文超过文本上限，后端会截断后再送入模型。
 - `credentials.json` 包含敏感信息，请不要提交到公开仓库。
