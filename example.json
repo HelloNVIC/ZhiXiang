@@ -1,7 +1,21 @@
 {
-    "API_KEY": "",
-    "BASE_URL": "",
-    "MODEL": "",
+    "MODELS": [
+        {
+            "name": "GLM-5.1",
+            "model_id": "GLM-5.1",
+            "api_key": "sk-...",
+            "base_url": "https://api.example.com/v1/",
+            "priority": 1,
+            "reasoning_effort": "high"
+        },
+        {
+            "name": "MiniMax-M2.7",
+            "model_id": "MiniMax-M2.7",
+            "api_key": "sk-...",
+            "base_url": "https://api.example.com/v1/",
+            "priority": 2
+        }
+    ],
     "ENABLE_DEBUG_OUTPUT": false,
     "MAX_CONCURRENT_GENERATION_TASKS": 1,
     "ACCESS_PASSPHRASES": ["NVIC"]

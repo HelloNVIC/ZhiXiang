@@ -371,25 +371,26 @@ async def _stream_response(response, thought_filter: ThoughtProcessFilter = None
         if not delta:
             continue
 
-        # reasoning_content 字段（如 DeepSeek）
+        # 有些模型同时返回 reasoning_content（思考）和 content（正式输出）
+        # 两者可能出现在同一 chunk，也可能分不同 chunk 先后出现
+        # 规则：reasoning_content 一律视为思考过程，content 才是正式输出
         reasoning = getattr(delta, "reasoning_content", None)
+        token = getattr(delta, "content", None) or ""
+
         if reasoning:
             debug_response_chunk(f"[thought] {reasoning}")
             payload = json.dumps({"token": reasoning, "isThought": True}, ensure_ascii=False)
             yield f"data: {payload}\n\n"
             await asyncio.sleep(0.001)
 
-        token = getattr(delta, "content", None) or ""
         if not token:
             continue
 
-        # content 中包含 <thinking> 等标记时，也识别为思考过程
+        # content 中的思考标记过滤
         visible_token = thought_filter.feed(token)
         if not visible_token:
-            # 被 filter 吃掉的是思考内容，也发送给前端
-            thought_content = token
-            debug_response_chunk(f"[thought-filtered] {thought_content}")
-            payload = json.dumps({"token": thought_content, "isThought": True}, ensure_ascii=False)
+            debug_response_chunk(f"[thought-filtered] {token}")
+            payload = json.dumps({"token": token, "isThought": True}, ensure_ascii=False)
             yield f"data: {payload}\n\n"
             await asyncio.sleep(0.001)
             continue
@@ -453,6 +454,11 @@ html+css+js+svg，放进一个html里，直接只给出html，不用其它总结
         )
         thought_filter = ThoughtProcessFilter.from_config(model_cfg.get("thought_markers"))
 
+        reasoning_effort = model_cfg.get("reasoning_effort")
+        create_kwargs = dict(model=model_id, messages=messages, stream=True, temperature=0.8)
+        if reasoning_effort:
+            create_kwargs["reasoning_effort"] = reasoning_effort
+
         debug_llm("request received", {
             "provider": "openai-compatible",
             "model": model_name,
@@ -465,12 +471,7 @@ html+css+js+svg，放进一个html里，直接只给出html，不用其它总结
 
         try:
             response = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=model_id,
-                    messages=messages,
-                    stream=True,
-                    temperature=0.8,
-                ),
+                client.chat.completions.create(**create_kwargs),
                 timeout=60,
             )
         except Exception as e:
@@ -623,16 +624,16 @@ async def paper_llm_event_stream(
         )
         thought_filter = ThoughtProcessFilter.from_config(model_cfg.get("thought_markers"))
 
+        reasoning_effort = model_cfg.get("reasoning_effort")
+        create_kwargs = dict(model=model_id, messages=messages, stream=True, temperature=0.8)
+        if reasoning_effort:
+            create_kwargs["reasoning_effort"] = reasoning_effort
+
         debug_conversation("openai-compatible", model_name, messages, settings)
 
         try:
             response = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=model_id,
-                    messages=messages,
-                    stream=True,
-                    temperature=0.8,
-                ),
+                client.chat.completions.create(**create_kwargs),
                 timeout=60,
             )
         except Exception as e:

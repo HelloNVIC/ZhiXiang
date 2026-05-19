@@ -122,7 +122,8 @@ cp example.json credentials.json
             "model_id": "GLM-5.1",
             "api_key": "sk-...",
             "base_url": "https://api.example.com/v1/",
-            "priority": 1
+            "priority": 1,
+            "reasoning_effort": "high"
         },
         {
             "name": "MiniMax-M2.7",
@@ -233,6 +234,7 @@ docker run --rm -p 8000:8000 -v "$(pwd)/credentials.json:/app/credentials.json:r
 | `MODELS[].api_key` | 是 | 无 | 当前模型使用的大模型 API Key |
 | `MODELS[].base_url` | 否 | 空字符串 | 当前模型使用的 OpenAI 兼容接口地址 |
 | `MODELS[].priority` | 否 | `0` | 模型优先级，数字越小越优先 |
+| `MODELS[].reasoning_effort` | 否 | 无 | 模型思考深度，可选 `low` / `medium` / `high`，不配置则使用模型默认值 |
 | `MODELS[].thought_markers` | 否 | 内置标记 | 自定义思考过程开始/结束标记，例如 `<think>` |
 | `ENABLE_DEBUG_OUTPUT` | 否 | `true` | 是否打印 LLM 请求、响应和配置热更新调试信息 |
 | `MAX_CONCURRENT_GENERATION_TASKS` | 否 | `1` | 最大并发生成任务数 |
